@@ -1,7 +1,7 @@
 # current-stage.md
 
 阶段 id：第1轮 — 项目骨架
-状态：in_progress
+状态：closed
 轮次：1/9
 
 ## 功能目标
