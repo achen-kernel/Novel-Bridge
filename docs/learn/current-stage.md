@@ -1,7 +1,7 @@
 # current-stage.md
 
 阶段 id：第2轮 — 数据库表设计
-状态：planned
+状态：in_progress
 轮次：2/9
 
 ## 功能目标
