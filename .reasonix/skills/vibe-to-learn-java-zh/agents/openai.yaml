@@ -1,0 +1,4 @@
+﻿interface:
+  display_name: "Java Vibe 伴学"
+  short_description: "从零开始的 Java vibe coding 伴学 harness"
+  default_prompt: "使用这个 skill，陪伴 Java 后端初学者从零完成 Spring Boot + Vue 项目，维护轻量阶段学习、链路地图、练习快照和个人 vibe coding 工作法。"

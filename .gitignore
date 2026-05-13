@@ -1,0 +1,30 @@
+# ===== Java / Maven =====
+Novel-Bridge/target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+**/.idea/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+*.swp
+
+# ===== Project data =====
+data/books/*
+data/chroma/*
+data/workspace/*
+!data/samples/
+!data/books/.gitkeep
+
+# ===== Logs =====
+*.log
+
+# ===== Env =====
+.env
