@@ -1,0 +1,16 @@
+{
+  "schema": "vtl-adapter-v0.1",
+  "project_name": "NovelBridge-Agents",
+  "backend_root": "Novel-Bridge",
+  "frontend_root": null,
+  "rag_root": null,
+  "docs_root": "docs/learn",
+  "data_root": "data",
+  "skill_package_root": ".opencode/skills/vibe-learn",
+  "notes": [
+    "The Spring Boot backend currently lives under Novel-Bridge instead of the repository root.",
+    "Frontend and rag-service are not created yet.",
+    "Use this adapter before changing scan scripts or assuming root-level pom.xml.",
+    "Old skill at .reasonix/ is deprecated — migrated to .opencode/skills/vibe-learn."
+  ]
+}

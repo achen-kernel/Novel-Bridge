@@ -1,0 +1,20 @@
+{
+  "schema": "vtl-state-v0.2",
+  "project_name": "NovelBridge-Agents",
+  "project_mode": "build_from_zero",
+  "loop": "demo-first",
+  "learner_goal": "java-backend-to-ai-fullstack",
+  "main_branch": "master",
+  "practice_branch": "practice",
+  "active_stage": "demo-2-agent-run",
+  "stage_status": "planned",
+  "backend_root": "Novel-Bridge",
+  "frontend_root": null,
+  "rag_root": null,
+  "docs_root": "docs/learn",
+  "skill_package_root": ".opencode/skills/vibe-learn",
+  "cost_mode": "low",
+  "doc_policy": "compact_event_driven",
+  "skill_feedback_policy": "log_first_edit_on_request",
+  "updated_at": "2026-05-14T21:40:00+08:00"
+}
