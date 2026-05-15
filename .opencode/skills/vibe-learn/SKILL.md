@@ -42,6 +42,7 @@ Read only these by default:
 
 Read these only when the event requires it:
 
+- `docs/learn/project-skeleton.md`: recommended layered architecture template.
 - `docs/learn/learning-plan.md`: stage list and checkpoints.
 - `docs/learn/demo-plan.md`: walking skeleton and mock/debt list.
 - `docs/learn/flow-map.md`: backend flow, API contract, full-stack field trace.
@@ -83,6 +84,58 @@ Keep skill-facing instructions in English for portability across models. Answer 
 - Script behavior or output contract: read `references/07-script-contract.md`.
 - Skill evolution rules: read `references/09-skill-evolution.md`.
 - Overall operating model: read `references/01-operating-model.md` only when changing the workflow.
+
+## Closing Checklist (orchestrator integration)
+
+When an orchestrator agent uses this skill through a project-level `AGENTS.md`, add these steps after each demo cycle to prevent skipping Practice and Retro.
+
+### Project setup
+
+The project's `AGENTS.md` should contain:
+
+1. A `Vibe-Learn Closing Checklist` section with these items:
+   - `@VTL-PRACTICE` markers on code with genuine learning value
+   - `docs/learn/retro-log.md` update with bugs, agent drift, decisions
+   - `docs/learn/personal-vibecoding-playbook.md` update
+   - `docs/learn/vtl-feedback-log.md` update for skill-level blockers
+
+2. A command reference to the closing script:
+   ```powershell
+   python .opencode\skills\vibe-learn\scripts\vtl_closing.py --root . --json
+   ```
+
+### Hook script (token optimization)
+
+The `scripts/vtl_closing.py` script automates checklist verification:
+
+```bash
+python .opencode\skills\vibe-learn\scripts\vtl_closing.py --root . --json
+```
+
+**Why a script instead of text-only?**
+- Agent reading 4 bullet items + reasoning ~= 200–300 tokens
+- Script output with status per item ~= 50 tokens
+- Agent only acts on RED items, skips GREEN = significant token savings per cycle
+
+The script checks:
+1. `@VTL-PRACTICE markers` → scans `.java` files in backend root
+2. `retro-log.md` → verifies existence and dated entry sections
+3. `personal-vibecoding-playbook.md` → verifies existence
+4. `vtl-feedback-log.md` → verifies existence (YELLOW if missing, not blocking)
+
+The orchestrator agent runs this script after Evidence/Verify and fixes any RED result before declaring the stage closed.
+
+## Common module conventions (from project-skeleton.md)
+
+Projects using this skill should adopt these common-module conventions:
+
+- `common/result/Result<T>` — unified API response with `code` + `msg` + `data`
+- `common/exception/BaseException` — business exception base class
+- `common/handler/GlobalExceptionHandler` — `@RestControllerAdvice` catching all exceptions
+- `common/properties/*Properties` — `@ConfigurationProperties` mapping application.yml config
+- `common/util/*` — stateless utility classes with static methods
+
+These are documented in detail in `docs/learn/project-skeleton.md` (read-only recommended doc).
 
 ## Practice Marker Rule
 

@@ -1,6 +1,6 @@
 package com.achen.novelbridge.pojo.entity;
 
-import com.achen.novelbridge.common.entity.BaseEntity;
+import com.achen.novelbridge.common.base.BaseEntity;
 import com.achen.novelbridge.common.enums.ChapterStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

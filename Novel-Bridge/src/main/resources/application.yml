@@ -11,16 +11,16 @@ spring:
     max-request-size: 50MB
 
   # ===== 暂时禁用 Redis（Demo 5 之后用到时再开启） =====
-  autoconfigure.exclude:
-    - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-    - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+#  autoconfigure.exclude:
+#    - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+#    - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 
 server.port: 8080
 
 management:
   endpoints.web.exposure.include: health,info
   endpoint.health.show-details: always
-  endpoints.web.base-path: /actuator
+  endpoints.web.base-path: /tor
 
 novel-bridge:
   books.base-dir: ..

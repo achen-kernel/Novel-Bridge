@@ -1,15 +1,21 @@
 package com.achen.novelbridge.controller;
 
+import com.achen.novelbridge.common.exception.BaseException;
+import com.achen.novelbridge.common.result.Result;
+import com.achen.novelbridge.mapper.BookMapper;
+import com.achen.novelbridge.mapper.ChapterMapper;
 import com.achen.novelbridge.pojo.dto.CreateBookRequest;
+import com.achen.novelbridge.pojo.entity.NovelAgentRun;
+import com.achen.novelbridge.pojo.entity.NovelAgentStep;
 import com.achen.novelbridge.pojo.entity.NovelBook;
 import com.achen.novelbridge.pojo.entity.NovelChapter;
+import com.achen.novelbridge.pojo.vo.AgentRunVO;
+import com.achen.novelbridge.pojo.vo.AgentStepVO;
 import com.achen.novelbridge.pojo.vo.BookVO;
 import com.achen.novelbridge.pojo.vo.ChapterVO;
-import com.achen.novelbridge.server.repository.BookRepository;
-import com.achen.novelbridge.server.repository.ChapterRepository;
-import com.achen.novelbridge.server.service.BookService;
+import com.achen.novelbridge.service.IBookService;
+import com.achen.novelbridge.service.IAgentRunService;
 import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,15 +29,17 @@ import java.util.List;
 @RequestMapping("/api/books")
 public class BookController {
 
-    private final BookService bookService;
-    private final BookRepository bookRepository;
-    private final ChapterRepository chapterRepository;
+    private final IBookService bookService;
+    private final BookMapper bookMapper;
+    private final ChapterMapper chapterMapper;
+    private final IAgentRunService agentRunService;
 
-    public BookController(BookService bookService, BookRepository bookRepository,
-                          ChapterRepository chapterRepository) {
+    public BookController(IBookService bookService, BookMapper bookMapper,
+                          ChapterMapper chapterMapper, IAgentRunService agentRunService) {
         this.bookService = bookService;
-        this.bookRepository = bookRepository;
-        this.chapterRepository = chapterRepository;
+        this.bookMapper = bookMapper;
+        this.chapterMapper = chapterMapper;
+        this.agentRunService = agentRunService;
     }
 
     /**
@@ -39,9 +47,9 @@ public class BookController {
      * Status = IMPORTED.
      */
     @PostMapping
-    public ResponseEntity<BookVO> createBook(@Valid @RequestBody CreateBookRequest request) {
+    public Result<BookVO> createBook(@Valid @RequestBody CreateBookRequest request) {
         NovelBook book = bookService.createBook(request.getFilePath());
-        return ResponseEntity.ok(toVO(book));
+        return Result.success(toVO(book));
     }
 
     /**
@@ -49,27 +57,37 @@ public class BookController {
      * Status: BUILDING -> READY_FOR_QA (or BUILD_FAILED).
      */
     @PostMapping("/{bookId}/build")
-    public ResponseEntity<BookVO> buildBook(@PathVariable Long bookId) {
+    public Result<BookVO> buildBook(@PathVariable Long bookId) {
         NovelBook book = bookService.buildBook(bookId);
-        List<NovelChapter> chapters = chapterRepository.findByBookIdOrderByChapterNumber(bookId);
-        return ResponseEntity.ok(toVO(book, chapters));
+        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
+        return Result.success(toVO(book, chapters));
     }
 
     /**
      * View a book with its chapters.
      */
     @GetMapping("/{bookId}")
-    public ResponseEntity<BookVO> getBook(@PathVariable Long bookId) {
-        NovelBook book = bookRepository.findById(bookId)
-                .orElseThrow(() -> new IllegalArgumentException("Book not found: " + bookId));
-        List<NovelChapter> chapters = chapterRepository.findByBookIdOrderByChapterNumber(bookId);
-        return ResponseEntity.ok(toVO(book, chapters));
+    public Result<BookVO> getBook(@PathVariable Long bookId) {
+        NovelBook book = bookMapper.findById(bookId)
+                .orElseThrow(() -> new BaseException("Book not found: " + bookId));
+        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
+        return Result.success(toVO(book, chapters));
+    }
+
+    /**
+     * View all build runs for a book (with step details).
+     */
+    @GetMapping("/{bookId}/runs")
+    public Result<List<AgentRunVO>> getRuns(@PathVariable Long bookId) {
+        List<NovelAgentRun> runs = agentRunService.getRunsByBookId(bookId);
+        List<AgentRunVO> result = runs.stream().map(this::toRunVO).toList();
+        return Result.success(result);
     }
 
     // -- helper --
 
     private BookVO toVO(NovelBook book) {
-        List<NovelChapter> chapters = chapterRepository.findByBookIdOrderByChapterNumber(book.getId());
+        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(book.getId());
         return toVO(book, chapters);
     }
 
@@ -95,6 +113,32 @@ public class BookController {
                 .chapterNumber(ch.getChapterNumber())
                 .title(ch.getTitle())
                 .charCount(ch.getCharCount())
+                .build();
+    }
+
+    private AgentRunVO toRunVO(NovelAgentRun run) {
+        List<NovelAgentStep> steps = agentRunService.getStepsByRunId(run.getId());
+        return AgentRunVO.builder()
+                .id(run.getId())
+                .runType(run.getRunType())
+                .bookId(run.getBookId())
+                .status(run.getStatus())
+                .startedAt(run.getStartedAt())
+                .completedAt(run.getCompletedAt())
+                .errorMessage(run.getErrorMessage())
+                .steps(steps.stream().map(this::toStepVO).toList())
+                .build();
+    }
+
+    private AgentStepVO toStepVO(NovelAgentStep step) {
+        return AgentStepVO.builder()
+                .id(step.getId())
+                .stepType(step.getStepType())
+                .stepOrder(step.getStepOrder())
+                .status(step.getStatus())
+                .startedAt(step.getStartedAt())
+                .completedAt(step.getCompletedAt())
+                .errorMessage(step.getErrorMessage())
                 .build();
     }
 }

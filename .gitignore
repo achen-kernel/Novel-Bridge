@@ -3,7 +3,6 @@ Novel-Bridge/target/
 *.class
 *.jar
 *.war
-!.mvn/wrapper/maven-wrapper.jar
 
 # ===== IDE =====
 .idea/
@@ -26,5 +25,15 @@ data/workspace/*
 # ===== Logs =====
 *.log
 
+# ===== Deprecated (migrated from Reasonix to OpenCode) =====
+.reasonix/
+
+# ===== OpenCode IDE (只追踪 skills/，其余忽略) =====
+.opencode/node_modules/
+.opencode/.gitignore
+.opencode/package.json
+.opencode/package-lock.json
+
 # ===== Env =====
 .env
+book-test/
