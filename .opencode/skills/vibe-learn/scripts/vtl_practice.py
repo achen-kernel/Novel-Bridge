@@ -154,6 +154,98 @@ def transform_markers(target: Path, version: str, dry_run: bool):
     return planned, warnings
 
 
+def generate_idea_config(target: Path, dry_run: bool):
+    """Generate IntelliJ IDEA project configuration so the practice directory
+    is indexed correctly with JDK 21 and TODO scanning enabled."""
+    if dry_run:
+        return []
+
+    idea_dir = target / ".idea"
+    modules_dir = idea_dir / "modules"
+    modules_dir.mkdir(parents=True, exist_ok=True)
+
+    files = {}
+
+    # misc.xml — JDK configuration
+    files[".idea/misc.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_21" project-jdk-name="21" project-jdk-type="JavaSDK">
+    <output url="file://$PROJECT_DIR$/target/classes" />
+  </component>
+</project>
+"""
+
+    # modules.xml — module registry
+    files[".idea/modules.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/novel-bridge.iml" filepath="$PROJECT_DIR$/.idea/modules/novel-bridge.iml" />
+    </modules>
+  </component>
+</project>
+"""
+
+    # modules/novel-bridge.iml — source roots, Spring facet
+    files[".idea/modules/novel-bridge.iml"] = """<?xml version="1.0" encoding="UTF-8"?>
+<module type="JAVA_MODULE" version="4">
+  <component name="FacetManager">
+    <facet type="Spring" name="Spring">
+      <configuration>
+        <fileset id="fileset" name="Spring Application" removed="false">
+          <file>file://$MODULE_DIR$/../../src/main/java/com/achen/novelbridge/NovelBridgeApplication.java</file>
+        </fileset>
+      </configuration>
+    </facet>
+  </component>
+  <component name="NewModuleRootManager" inherit-compiler-output="true">
+    <exclude-output />
+    <content url="file://$MODULE_DIR$/../..">
+      <sourceFolder url="file://$MODULE_DIR$/../../src/main/java" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/../../src/main/resources" type="java-resource" />
+      <sourceFolder url="file://$MODULE_DIR$/../../src/test/java" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/../../target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="library" name="Maven: org.springframework.boot:spring-boot-starter-web:4.0.6" level="project" />
+  </component>
+</module>
+"""
+
+    # compiler.xml — Lombok annotation processing
+    files[".idea/compiler.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Maven default annotation processors profile" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+      </profile>
+    </annotationProcessing>
+  </component>
+</project>
+"""
+
+    # vcs.xml — no VCS (practice is separate from main repo)
+    files[".idea/vcs.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="" />
+  </component>
+</project>
+"""
+
+    generated = []
+    for rel_path, content in files.items():
+        path = target / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.lstrip(), encoding="utf-8")
+        generated.append(rel_path)
+    return generated
+
+
 def main():
     parser = argparse.ArgumentParser(description="Create a practice snapshot from marked Java methods.")
     parser.add_argument("--version", required=True)
@@ -177,6 +269,7 @@ def main():
 
     copied = copy_tree(source, target, args.dry_run)
     planned, marker_warnings = transform_markers(target if target.exists() else source, args.version, args.dry_run)
+    idea_files = generate_idea_config(target, args.dry_run)
     warnings.extend(marker_warnings)
     commit = source_commit(source)
 
@@ -186,6 +279,7 @@ def main():
         meta.parent.mkdir(parents=True, exist_ok=True)
         meta.write_text(json.dumps({"version": args.version, "source_commit": commit}, indent=2) + "\n", encoding="utf-8")
         artifacts.append(str(meta))
+        artifacts.extend(str(target / f) for f in idea_files)
 
     status = "success" if planned else "warning"
     output = result(
@@ -196,6 +290,7 @@ def main():
         next_actions=["Review planned changes", "Run build/tests in practice target after generation"],
         warnings=warnings + ([] if planned else ["No matching practice markers found."]),
         copied_files=len(copied),
+        idea_files_generated=len(idea_files),
         planned_replacements=planned,
         source_commit=commit,
         dry_run=args.dry_run,

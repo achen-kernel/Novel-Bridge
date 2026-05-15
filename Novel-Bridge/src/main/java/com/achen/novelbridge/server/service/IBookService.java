@@ -1,4 +1,4 @@
-package com.achen.novelbridge.service;
+package com.achen.novelbridge.server.service;
 
 import com.achen.novelbridge.pojo.entity.NovelBook;
 

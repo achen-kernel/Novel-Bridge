@@ -1,9 +1,9 @@
-package com.achen.novelbridge.controller;
+package com.achen.novelbridge.server.controller;
 
 import com.achen.novelbridge.common.exception.BaseException;
 import com.achen.novelbridge.common.result.Result;
-import com.achen.novelbridge.mapper.BookMapper;
-import com.achen.novelbridge.mapper.ChapterMapper;
+import com.achen.novelbridge.server.mapper.BookMapper;
+import com.achen.novelbridge.server.mapper.ChapterMapper;
 import com.achen.novelbridge.pojo.dto.CreateBookRequest;
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
 import com.achen.novelbridge.pojo.entity.NovelAgentStep;
@@ -13,8 +13,8 @@ import com.achen.novelbridge.pojo.vo.AgentRunVO;
 import com.achen.novelbridge.pojo.vo.AgentStepVO;
 import com.achen.novelbridge.pojo.vo.BookVO;
 import com.achen.novelbridge.pojo.vo.ChapterVO;
-import com.achen.novelbridge.service.IBookService;
-import com.achen.novelbridge.service.IAgentRunService;
+import com.achen.novelbridge.server.service.IBookService;
+import com.achen.novelbridge.server.service.IAgentRunService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,8 +68,10 @@ public class BookController {
      */
     @GetMapping("/{bookId}")
     public Result<BookVO> getBook(@PathVariable Long bookId) {
-        NovelBook book = bookMapper.findById(bookId)
-                .orElseThrow(() -> new BaseException("Book not found: " + bookId));
+        NovelBook book = bookMapper.findById(bookId);
+        if (book == null) {
+            throw new BaseException("Book not found: " + bookId);
+        }
         List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
         return Result.success(toVO(book, chapters));
     }

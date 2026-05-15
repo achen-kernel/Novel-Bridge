@@ -1,26 +1,27 @@
 spring:
   application.name: Novel-Bridge
   profiles.active: dev
-  jpa:
-    hibernate.ddl-auto: update
-    properties.hibernate.format_sql: true
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
   servlet.multipart:
     max-file-size: 50MB
     max-request-size: 50MB
+  sql:
+    init:
+      mode: always
 
-  # ===== 暂时禁用 Redis（Demo 5 之后用到时再开启） =====
-#  autoconfigure.exclude:
-#    - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-#    - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 server.port: 8080
 
 management:
   endpoints.web.exposure.include: health,info
   endpoint.health.show-details: always
-  endpoints.web.base-path: /tor
+  endpoints.web.base-path: /actuator
 
 novel-bridge:
   books.base-dir: ..

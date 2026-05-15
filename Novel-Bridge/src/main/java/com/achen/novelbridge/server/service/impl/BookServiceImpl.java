@@ -1,4 +1,4 @@
-package com.achen.novelbridge.service.impl;
+package com.achen.novelbridge.server.service.impl;
 
 import com.achen.novelbridge.common.enums.BookStatus;
 import com.achen.novelbridge.common.enums.ChapterStatus;
@@ -6,14 +6,14 @@ import com.achen.novelbridge.common.enums.RunType;
 import com.achen.novelbridge.common.enums.StepType;
 import com.achen.novelbridge.common.properties.BooksProperties;
 import com.achen.novelbridge.common.util.ChapterSplitter;
-import com.achen.novelbridge.mapper.BookMapper;
-import com.achen.novelbridge.mapper.ChapterMapper;
+import com.achen.novelbridge.server.mapper.BookMapper;
+import com.achen.novelbridge.server.mapper.ChapterMapper;
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
 import com.achen.novelbridge.pojo.entity.NovelAgentStep;
 import com.achen.novelbridge.pojo.entity.NovelBook;
 import com.achen.novelbridge.pojo.entity.NovelChapter;
-import com.achen.novelbridge.service.IBookService;
-import com.achen.novelbridge.service.IAgentRunService;
+import com.achen.novelbridge.server.service.IBookService;
+import com.achen.novelbridge.server.service.IAgentRunService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,7 +87,8 @@ public class BookServiceImpl implements IBookService {
         }
 
         book.setCreatedBy("SYSTEM");
-        return bookMapper.save(book);
+        bookMapper.insert(book);
+        return book;
     }
 
     @Override
@@ -100,11 +101,13 @@ public class BookServiceImpl implements IBookService {
     // pitfalls=事务边界在哪里？catch 里的保存会不会被回滚？
     // hints=每个步骤先 startStep → 执行业务 → completeStep/failStep
     public NovelBook buildBook(Long bookId) {
-        NovelBook book = bookMapper.findById(bookId)
-                .orElseThrow(() -> new IllegalArgumentException("Book not found: " + bookId));
+        NovelBook book = bookMapper.findById(bookId);
+        if (book == null) {
+            throw new IllegalArgumentException("Book not found: " + bookId);
+        }
 
         book.setStatus(BookStatus.BUILDING);
-        bookMapper.save(book);
+        bookMapper.update(book);
 
         // Create AgentRun — tracks the entire build process
         NovelAgentRun run = agentRunService.createRun(RunType.BOOK_BUILD, bookId);
@@ -145,16 +148,15 @@ public class BookServiceImpl implements IBookService {
                 ch.setCharCount(seg.getRawContent().length());
                 ch.setStatus(ChapterStatus.CREATED);
                 ch.setCreatedBy("SYSTEM");
-                chapters.add(ch);
+                chapterMapper.insert(ch);
             }
-            chapterMapper.saveAll(chapters);
             agentRunService.completeStep(step3);
 
             // --- Step 4: update book status ---
             NovelAgentStep step4 = agentRunService.startStep(run, StepType.UPDATE_BOOK_STATUS, order);
             book.setTotalChapters(chapters.size());
             book.setStatus(BookStatus.READY_FOR_QA);
-            bookMapper.save(book);
+            bookMapper.update(book);
             agentRunService.completeStep(step4);
 
             // Complete run
@@ -167,7 +169,7 @@ public class BookServiceImpl implements IBookService {
             agentRunService.failRun(run, e.getMessage());
             book.setStatus(BookStatus.BUILD_FAILED);
             book.setErrorMessage(e.getMessage());
-            bookMapper.save(book);
+            bookMapper.update(book);
             return book;
         }
     }

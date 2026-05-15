@@ -1,14 +1,14 @@
-package com.achen.novelbridge.service.impl;
+package com.achen.novelbridge.server.service.impl;
 
 import com.achen.novelbridge.common.enums.RunType;
 import com.achen.novelbridge.common.enums.StepStatus;
 import com.achen.novelbridge.common.enums.StepType;
 import com.achen.novelbridge.common.enums.TaskStatus;
-import com.achen.novelbridge.mapper.AgentRunMapper;
-import com.achen.novelbridge.mapper.AgentStepMapper;
+import com.achen.novelbridge.server.mapper.AgentRunMapper;
+import com.achen.novelbridge.server.mapper.AgentStepMapper;
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
 import com.achen.novelbridge.pojo.entity.NovelAgentStep;
-import com.achen.novelbridge.service.IAgentRunService;
+import com.achen.novelbridge.server.service.IAgentRunService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +28,6 @@ public class AgentRunServiceImpl implements IAgentRunService {
         this.stepMapper = stepMapper;
     }
 
-    // ===== Run =====
-
     @Override
     @Transactional
     public NovelAgentRun createRun(RunType runType, Long bookId) {
@@ -39,7 +37,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
         run.setStatus(TaskStatus.RUNNING);
         run.setStartedAt(LocalDateTime.now());
         run.setCreatedBy("SYSTEM");
-        return runMapper.save(run);
+        runMapper.insert(run);
+        return run;
     }
 
     @Override
@@ -47,7 +46,7 @@ public class AgentRunServiceImpl implements IAgentRunService {
     public void completeRun(NovelAgentRun run) {
         run.setStatus(TaskStatus.SUCCESS);
         run.setCompletedAt(LocalDateTime.now());
-        runMapper.save(run);
+        runMapper.update(run);
         log.info("AgentRun {} completed successfully", run.getId());
     }
 
@@ -57,11 +56,9 @@ public class AgentRunServiceImpl implements IAgentRunService {
         run.setStatus(TaskStatus.FAILED);
         run.setCompletedAt(LocalDateTime.now());
         run.setErrorMessage(errorMessage);
-        runMapper.save(run);
+        runMapper.update(run);
         log.warn("AgentRun {} failed: {}", run.getId(), errorMessage);
     }
-
-    // ===== Step =====
 
     @Override
     @Transactional
@@ -73,7 +70,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
         step.setStatus(StepStatus.RUNNING);
         step.setStartedAt(LocalDateTime.now());
         step.setCreatedBy("SYSTEM");
-        return stepMapper.save(step);
+        stepMapper.insert(step);
+        return step;
     }
 
     @Override
@@ -81,7 +79,7 @@ public class AgentRunServiceImpl implements IAgentRunService {
     public void completeStep(NovelAgentStep step) {
         step.setStatus(StepStatus.SUCCESS);
         step.setCompletedAt(LocalDateTime.now());
-        stepMapper.save(step);
+        stepMapper.update(step);
     }
 
     @Override
@@ -90,10 +88,8 @@ public class AgentRunServiceImpl implements IAgentRunService {
         step.setStatus(StepStatus.FAILED);
         step.setCompletedAt(LocalDateTime.now());
         step.setErrorMessage(errorMessage);
-        stepMapper.save(step);
+        stepMapper.update(step);
     }
-
-    // ===== Query =====
 
     @Override
     public List<NovelAgentRun> getRunsByBookId(Long bookId) {

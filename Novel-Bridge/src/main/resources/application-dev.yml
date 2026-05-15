@@ -4,5 +4,3 @@ spring:
     url: jdbc:mysql://localhost:3306/novel_bridge?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: 123456
-  jpa:
-    show-sql: true

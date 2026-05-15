@@ -1,5 +1,46 @@
 # retro-log.md
 
+## 2026-05-14 — 项目结构重组（common/pojo/server 对齐苍穹外卖）
+
+### 决策：controller/mapper/service/handler 统一搬到 server/ 下
+- **背景**：项目结构未对齐参考模板（苍穹外卖），controller/mapper/service 在根包下，handler 在 common 下
+- **方案**：
+  - `controller/` → `server/controller/`
+  - `mapper/` → `server/mapper/`
+  - `service/` → `server/service/` + `server/service/impl/`
+  - `common/handler/` → `server/handler/`
+  - common/ + pojo/ 保持不变
+- **影响**：16 个文件 package 变更，需更新 @MapperScan、BookMapper.xml namespace
+- **验证**：mvn test 通过
+
+### Practice 版本优化：一键启动 + IDEA 自动配置
+- **问题**：practice 副本生成后需要手动配置数据库和 IDEA JDK
+- **方案**：
+  - 新增 `application-practice.yml`：使用独立数据库 `novel_bridge_practice`
+  - 修改 `vtl_practice.py`：新增 `generate_idea_config()`，自动生成 `.idea/` 配置
+  - 生成后 `run.bat`：自动创建数据库 + 启动应用
+- **错误**：`mybatis-spring-boot-starter:3.0.4` 与 Spring Boot 4.0.6 不兼容，升级至 4.0.0
+
+## 2026-05-14 — JPA → MyBatis 迁移
+
+### 决策：Spring Data JPA → MyBatis 4.0.0
+- **原因**：用户要求使用 MyBatis（带 SQL 映射）+ 后续再用 MyBatis-Plus
+- **删除**：`spring-boot-starter-data-jpa`、`spring-boot-starter-data-redis`
+- **新增**：`mybatis-spring-boot-starter:4.0.0`
+- **配置**：`@MapperScan`、`mybatis.mapper-locations`、`map-underscore-to-camel-case`
+- **Entity 变化**：所有实体剥离 JPA 注解，改为纯 POJO + `extends BaseEntity`
+- **BaseEntity 变化**：移除所有 JPA 注解（`@MappedSuperclass`、`@Id`、`@GeneratedValue`、`@Column`、`@PrePersist`、`@PreUpdate`）
+- **Mapper 变化**：`extends JpaRepository` → `@Mapper` + `@Insert` / `@Select` / `@Update`
+- **XML 映射**：`BookMapper.xml` 演示 XML 动态 SQL 用法（`<set>` + `<if>`）
+- **schema**：`src/main/resources/schema.sql` 定义所有表（11 张，含预留表）
+- **配置**：移除 JPA 相关配置，添加 MyBatis 配置，启用 SQL 初始化
+
+### Bug：mybatis-spring-boot-starter 版本兼容性
+- **现象**：3.0.4 和 3.0.5 报 `Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`
+- **根因**：Spring Boot 4.0.6 需要 `mybatis-spring-boot-starter:4.0.0`
+- **修复**：版本升至 4.0.0，测试通过
+- **教训**：Spring Boot 大版本升级时，第三方 starter 也需要对应大版本
+
 ## 2026-05-14 — Architecture hardening (Post-Demo 2)
 
 ### 新增：统一响应模型 + 异常体系

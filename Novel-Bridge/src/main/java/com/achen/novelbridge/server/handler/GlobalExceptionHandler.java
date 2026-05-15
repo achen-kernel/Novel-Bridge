@@ -1,4 +1,4 @@
-package com.achen.novelbridge.common.handler;
+package com.achen.novelbridge.server.handler;
 
 import com.achen.novelbridge.common.exception.BaseException;
 import com.achen.novelbridge.common.result.Result;

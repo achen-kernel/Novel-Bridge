@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.achen.novelbridge.server.mapper.BookMapper">
+
+    <update id="update" parameterType="com.achen.novelbridge.pojo.entity.NovelBook">
+        UPDATE novel_book
+        <set>
+            <if test="projectId != null">project_id = #{projectId},</if>
+            <if test="folderId != null">folder_id = #{folderId},</if>
+            <if test="title != null">title = #{title},</if>
+            <if test="author != null">author = #{author},</if>
+            <if test="sourceFilename != null">source_filename = #{sourceFilename},</if>
+            <if test="sourcePath != null">source_path = #{sourcePath},</if>
+            <if test="fileSize != null">file_size = #{fileSize},</if>
+            <if test="fileType != null">file_type = #{fileType},</if>
+            <if test="totalChapters != null">total_chapters = #{totalChapters},</if>
+            <if test="totalChunks != null">total_chunks = #{totalChunks},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="errorMessage != null">error_message = #{errorMessage},</if>
+            updated_at = NOW(),
+            <if test="updatedBy != null">updated_by = #{updatedBy},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+</mapper>

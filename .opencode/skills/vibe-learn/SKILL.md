@@ -125,15 +125,42 @@ The script checks:
 
 The orchestrator agent runs this script after Evidence/Verify and fixes any RED result before declaring the stage closed.
 
-## Common module conventions (from project-skeleton.md)
+## Project structure convention (from project-skeleton.md)
 
-Projects using this skill should adopt these common-module conventions:
+> **Technology note**: The conventions below are Java / Spring Boot–specific (Maven, MyBatis, IntelliJ IDEA).
+> For other stacks (Python, Node.js, Go, etc.), replace this section with the appropriate conventions.
+> The core loop (Status → Demo → Evidence → Practice → Retro) and Closing Checklist are technology-agnostic.
+
+Projects using this skill with Java/Spring Boot should follow a **common / pojo / server** three-layer package layout (参考苍穹外卖):
+
+```
+com.achen.novelbridge/
+├── common/          ← 基础设施层（工具/异常/响应/枚举/配置）
+├── pojo/            ← 数据模型层（DTO/Entity/VO）
+└── server/          ← 业务主模块（controller/mapper/service/handler）
+```
+
+Detailed conventions:
 
 - `common/result/Result<T>` — unified API response with `code` + `msg` + `data`
 - `common/exception/BaseException` — business exception base class
-- `common/handler/GlobalExceptionHandler` — `@RestControllerAdvice` catching all exceptions
+- `server/handler/GlobalExceptionHandler` — `@RestControllerAdvice` catching all exceptions
 - `common/properties/*Properties` — `@ConfigurationProperties` mapping application.yml config
 - `common/util/*` — stateless utility classes with static methods
+
+### ORM convention: MyBatis (not JPA)
+
+Projects should use **MyBatis** for data access (not Spring Data JPA):
+
+- Each mapper interface in `server/mapper/` package, annotated with `@Mapper`
+- Simple CRUD via `@Insert`, `@Select`, `@Update`, `@Delete` annotations
+- Complex queries in XML files under `resources/mapper/`
+- `@MapperScan("com.achen.novelbridge.server.mapper")` on `@SpringBootApplication`
+- Schema managed via `schema.sql` + `spring.sql.init.mode=always`
+- Entity classes are plain POJOs with no ORM annotations
+- Base entity fields (id, createdAt, updatedAt) handled by SQL DEFAULT
+
+> **Upgrade path**: MyBatis → MyBatis-Plus when dynamic queries or pagination become complex. Both can coexist with careful configuration.
 
 These are documented in detail in `docs/learn/project-skeleton.md` (read-only recommended doc).
 
@@ -154,6 +181,23 @@ Avoid getters, setters, trivial wrappers, pure utilities, generated code, or cod
 - Prefer a separate worktree or practice branch for learning snapshots.
 - Record every practice version in `docs/learn/practice-plan.md`.
 - Update `docs/learn/personal-vibecoding-playbook.md` after repeated mistakes, important checkpoints, or project completion.
+
+### IDE support for practice snapshots
+
+> **Technology note**: The configuration below is for IntelliJ IDEA + Java. For other stacks, generate the IDE/project
+> configuration appropriate to that stack (e.g., `.vscode/launch.json` for VS Code, `pyproject.toml` for Python).
+
+When the practice snapshot is used with IntelliJ IDEA (for writing TODO code), generate IDEA project configuration so the IDE indexes files and scans TODOs:
+
+1. Create `.idea/misc.xml` — set `project-jdk-name="21"` and `languageLevel="JDK_21"`
+2. Create `.idea/modules.xml` — reference the module `.iml` file
+3. Create `.idea/modules/<module>.iml` — define source roots (src/main/java, src/main/resources, src/test/java)
+4. Create `.idea/compiler.xml` — enable annotation processing for Lombok
+5. Create `.idea/vcs.xml` — disable VCS
+
+Without these files, IDEA does not index the practice directory and TODO scanning does not work.
+
+The orchestrator agent should generate these files after calling `vtl_practice.py` when the practice target is intended for IDE use.
 
 ## Output Discipline
 

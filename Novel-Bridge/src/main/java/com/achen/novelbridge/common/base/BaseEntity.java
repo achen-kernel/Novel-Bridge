@@ -1,46 +1,24 @@
 package com.achen.novelbridge.common.base;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.MappedSuperclass;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
 
+/**
+ * Abstract base class for all entities.
+ * <p>
+ * MyBatis maps fields via SQL (no JPA annotations).
+ * created_at / updated_at use SQL DEFAULT + ON UPDATE in schema.
+ * id is populated by MySQL AUTO_INCREMENT via @Options(useGeneratedKeys=true).
+ */
 @Getter
 @Setter
-@MappedSuperclass
 public abstract class BaseEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
-    @Column(name = "created_by", length = 50)
     private String createdBy;
-
-    @Column(name = "updated_by", length = 50)
     private String updatedBy;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
-    }
 }
