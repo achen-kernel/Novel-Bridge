@@ -13,13 +13,15 @@
 - **影响**：16 个文件 package 变更，需更新 @MapperScan、BookMapper.xml namespace
 - **验证**：mvn test 通过
 
-### Practice 版本优化：一键启动 + IDEA 自动配置
-- **问题**：practice 副本生成后需要手动配置数据库和 IDEA JDK
-- **方案**：
-  - 新增 `application-practice.yml`：使用独立数据库 `novel_bridge_practice`
-  - 修改 `vtl_practice.py`：新增 `generate_idea_config()`，自动生成 `.idea/` 配置
-  - 生成后 `run.bat`：自动创建数据库 + 启动应用
-- **错误**：`mybatis-spring-boot-starter:3.0.4` 与 Spring Boot 4.0.6 不兼容，升级至 4.0.0
+### Practice 版本优化：一键启动 + 自动配置 + practice 分支
+- **问题**：practice 副本缺少 run.bat、IDEA 不识别 Maven、每次重生成后 IDEA 需重配
+- **旧方案（已废弃）**：目录复制（每次删整个目录 → .idea/ 丢失 → IDEA 需重配 JDK + Maven）
+- **新方案**：
+  - 使用 **git practice 分支**（`git branch practice-xx && git worktree add`）替代目录复制
+  - `.idea/` 仅创建一次永久保留
+  - `vtl_practice.py` 新增 `--inplace` 参数：跳过 copy_tree，仅转换标记 + 生成辅助文件
+- **更新流程**：`cd ../practice-dir && git merge master && python vtl_practice.py --target . --inplace`
+- **验证**：100 回 book 导入 + 问答 API 可用；mvn test 通过
 
 ## 2026-05-14 — JPA → MyBatis 迁移
 

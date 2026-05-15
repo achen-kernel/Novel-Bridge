@@ -1,11 +1,14 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelBook;
+import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
 import java.util.Optional;
 
 @Mapper
@@ -24,10 +27,10 @@ public interface BookMapper {
     NovelBook findById(Long id);
 
     @Select("SELECT * FROM novel_book ORDER BY id DESC")
-    java.util.List<NovelBook> findAll();
+    List<NovelBook> findAll();
 
-    @Select("SELECT * FROM novel_book WHERE id = #{id}")
-    Optional<NovelBook> findByIdOptional(Long id);
+    @Delete("DELETE FROM novel_book WHERE id = #{id}")
+    int deleteById(Long id);
 
     int update(NovelBook book);
 }

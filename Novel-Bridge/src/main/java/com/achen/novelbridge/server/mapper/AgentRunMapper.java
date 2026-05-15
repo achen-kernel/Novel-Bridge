@@ -1,6 +1,7 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -26,4 +27,7 @@ public interface AgentRunMapper {
 
     @Select("SELECT * FROM novel_agent_run WHERE book_id = #{bookId} ORDER BY created_at DESC")
     List<NovelAgentRun> findByBookIdOrderByCreatedAtDesc(@Param("bookId") Long bookId);
+
+    @Delete("DELETE FROM novel_agent_run WHERE book_id = #{bookId}")
+    int deleteByBookId(@Param("bookId") Long bookId);
 }

@@ -182,6 +182,35 @@ Avoid getters, setters, trivial wrappers, pure utilities, generated code, or cod
 - Record every practice version in `docs/learn/practice-plan.md`.
 - Update `docs/learn/personal-vibecoding-playbook.md` after repeated mistakes, important checkpoints, or project completion.
 
+### Recommended practice workflow (practice branch)
+
+One `practice` branch, no sub-branches.
+
+```bash
+# First time (from the main project):
+git branch practice
+git worktree add ../Novel-Bridge-practice practice
+```
+
+**Open in IDEA** — IDEA creates `.idea/`, detects `pom.xml`, imports Maven. One-time.
+
+**Generate practice TODO stubs:**
+```bash
+cd ../Novel-Bridge-practice
+python <main-project>/.opencode/skills/vibe-learn/scripts/vtl_practice.py \
+  --version <version> \
+  --target . \
+  --inplace --skip-clean-check --json
+```
+
+**Write practice code, then commit with a descriptive message:**
+```bash
+cd ../Novel-Bridge-practice
+git add -A
+git commit -m "practice: chineseToInt 算法练习"
+git push origin practice
+```
+
 ### IDE support for practice snapshots
 
 > **Technology note**: The configuration below is for IntelliJ IDEA + Java. For other stacks, generate the IDE/project

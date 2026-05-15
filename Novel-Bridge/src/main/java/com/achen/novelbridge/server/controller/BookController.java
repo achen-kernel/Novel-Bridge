@@ -16,6 +16,7 @@ import com.achen.novelbridge.pojo.vo.ChapterVO;
 import com.achen.novelbridge.server.service.IBookService;
 import com.achen.novelbridge.server.service.IAgentRunService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -74,6 +75,34 @@ public class BookController {
         }
         List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
         return Result.success(toVO(book, chapters));
+    }
+
+    /**
+     * List all books (for the frontend sidebar).
+     */
+    @GetMapping
+    public Result<List<BookVO>> listBooks() {
+        List<NovelBook> books = bookService.listBooks();
+        List<BookVO> result = books.stream()
+                .map(b -> BookVO.builder()
+                        .id(b.getId())
+                        .title(b.getTitle())
+                        .status(b.getStatus())
+                        .totalChapters(b.getTotalChapters())
+                        .errorMessage(b.getErrorMessage())
+                        .createdAt(b.getCreatedAt())
+                        .build())
+                .toList();
+        return Result.success(result);
+    }
+
+    /**
+     * Delete a book and all related data.
+     */
+    @DeleteMapping("/{bookId}")
+    public Result<Void> deleteBook(@PathVariable Long bookId) {
+        bookService.deleteBook(bookId);
+        return Result.success();
     }
 
     /**

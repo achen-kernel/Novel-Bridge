@@ -6,12 +6,17 @@ import com.achen.novelbridge.common.enums.RunType;
 import com.achen.novelbridge.common.enums.StepType;
 import com.achen.novelbridge.common.properties.BooksProperties;
 import com.achen.novelbridge.common.util.ChapterSplitter;
-import com.achen.novelbridge.server.mapper.BookMapper;
-import com.achen.novelbridge.server.mapper.ChapterMapper;
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
 import com.achen.novelbridge.pojo.entity.NovelAgentStep;
 import com.achen.novelbridge.pojo.entity.NovelBook;
 import com.achen.novelbridge.pojo.entity.NovelChapter;
+import com.achen.novelbridge.server.mapper.AgentRunMapper;
+import com.achen.novelbridge.server.mapper.AgentStepMapper;
+import com.achen.novelbridge.server.mapper.BookMapper;
+import com.achen.novelbridge.server.mapper.ChapterMapper;
+import com.achen.novelbridge.server.mapper.ChatMessageMapper;
+import com.achen.novelbridge.server.mapper.ChatSessionMapper;
+import com.achen.novelbridge.server.mapper.CitationMapper;
 import com.achen.novelbridge.server.service.IBookService;
 import com.achen.novelbridge.server.service.IAgentRunService;
 import lombok.extern.slf4j.Slf4j;
@@ -38,17 +43,50 @@ public class BookServiceImpl implements IBookService {
 
     private final BookMapper bookMapper;
     private final ChapterMapper chapterMapper;
+    private final AgentRunMapper agentRunMapper;
+    private final AgentStepMapper agentStepMapper;
+    private final ChatSessionMapper chatSessionMapper;
+    private final ChatMessageMapper chatMessageMapper;
+    private final CitationMapper citationMapper;
     private final IAgentRunService agentRunService;
     private final BooksProperties booksProperties;
 
     public BookServiceImpl(BookMapper bookMapper,
                            ChapterMapper chapterMapper,
+                           AgentRunMapper agentRunMapper,
+                           AgentStepMapper agentStepMapper,
+                           ChatSessionMapper chatSessionMapper,
+                           ChatMessageMapper chatMessageMapper,
+                           CitationMapper citationMapper,
                            IAgentRunService agentRunService,
                            BooksProperties booksProperties) {
         this.bookMapper = bookMapper;
         this.chapterMapper = chapterMapper;
+        this.agentRunMapper = agentRunMapper;
+        this.agentStepMapper = agentStepMapper;
+        this.chatSessionMapper = chatSessionMapper;
+        this.chatMessageMapper = chatMessageMapper;
+        this.citationMapper = citationMapper;
         this.agentRunService = agentRunService;
         this.booksProperties = booksProperties;
+    }
+
+    @Override
+    public List<NovelBook> listBooks() {
+        return bookMapper.findAll();
+    }
+
+    @Override
+    @Transactional
+    public void deleteBook(Long bookId) {
+        // Cascade delete: citations → messages → sessions → steps → runs → chapters → book
+        citationMapper.deleteByBookId(bookId);
+        chatMessageMapper.deleteByBookId(bookId);
+        chatSessionMapper.deleteByBookId(bookId);
+        agentStepMapper.deleteByBookId(bookId);
+        agentRunMapper.deleteByBookId(bookId);
+        chapterMapper.deleteByBookId(bookId);
+        bookMapper.deleteById(bookId);
     }
 
     @Override

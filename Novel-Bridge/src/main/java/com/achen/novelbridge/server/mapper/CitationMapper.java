@@ -1,6 +1,7 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelCitation;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -34,4 +35,9 @@ public interface CitationMapper {
 
     @Select("SELECT * FROM novel_citation WHERE message_id = #{messageId}")
     List<NovelCitation> findByMessageId(@Param("messageId") Long messageId);
+
+    @Delete("DELETE FROM novel_citation WHERE message_id IN "
+            + "(SELECT id FROM novel_chat_message WHERE session_id IN "
+            + "(SELECT id FROM novel_chat_session WHERE book_id = #{bookId}))")
+    int deleteByBookId(@Param("bookId") Long bookId);
 }

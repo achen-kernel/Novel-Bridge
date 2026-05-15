@@ -1,6 +1,7 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelAgentStep;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -26,4 +27,11 @@ public interface AgentStepMapper {
 
     @Select("SELECT * FROM novel_agent_step WHERE agent_run_id = #{agentRunId} ORDER BY step_order")
     List<NovelAgentStep> findByAgentRunIdOrderByStepOrder(@Param("agentRunId") Long agentRunId);
+
+    @Delete("DELETE FROM novel_agent_step WHERE agent_run_id IN "
+            + "(SELECT id FROM novel_agent_run WHERE book_id = #{bookId})")
+    int deleteByBookId(@Param("bookId") Long bookId);
+
+    @Delete("DELETE FROM novel_agent_step WHERE agent_run_id = #{agentRunId}")
+    int deleteByAgentRunId(@Param("agentRunId") Long agentRunId);
 }

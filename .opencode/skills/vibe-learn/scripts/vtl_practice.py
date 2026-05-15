@@ -155,27 +155,44 @@ def transform_markers(target: Path, version: str, dry_run: bool):
 
 
 def generate_idea_config(target: Path, dry_run: bool):
-    """Generate IntelliJ IDEA project configuration so the practice directory
-    is indexed correctly with JDK 21 and TODO scanning enabled."""
+    """Generate project configuration so the practice directory is
+    immediately usable.
+
+    For Java/IDEA: minimal .idea/ config with a lightweight .iml that
+    defines source roots but does NOT hardcode Maven dependencies —
+    IDEA will auto-import from pom.xml and overwrite the .iml.
+    Also generates a run.bat for one-click startup."""
     if dry_run:
         return []
 
-    idea_dir = target / ".idea"
-    modules_dir = idea_dir / "modules"
-    modules_dir.mkdir(parents=True, exist_ok=True)
+    # Determine the module content root.
+    # The practice tree is:
+    #   <target>/
+    #     .idea/
+    #     run.bat
+    #     application-practice.yml
+    #     Novel-Bridge/          ← backend (pom.xml)
+    #       pom.xml
+    #       src/main/java/...
+    #       src/main/resources/...
+    #       src/test/java/...
+    #
+    # The .idea/ lives at <target>/.idea/, so $PROJECT_DIR$ = <target>/
+    # and the module content root = $PROJECT_DIR$/Novel-Bridge .
+    MODULE_ROOT = "$PROJECT_DIR$/Novel-Bridge"
 
     files = {}
 
-    # misc.xml — JDK configuration
+    # misc.xml — JDK 21
     files[".idea/misc.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ProjectRootManager" version="2" languageLevel="JDK_21" project-jdk-name="21" project-jdk-type="JavaSDK">
-    <output url="file://$PROJECT_DIR$/target/classes" />
+    <output url="file://""" + MODULE_ROOT + """/target/classes" />
   </component>
 </project>
 """
 
-    # modules.xml — module registry
+    # modules.xml — register the module so IDEA shows the source tree
     files[".idea/modules.xml"] = """<?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ProjectModuleManager">
@@ -186,29 +203,20 @@ def generate_idea_config(target: Path, dry_run: bool):
 </project>
 """
 
-    # modules/novel-bridge.iml — source roots, Spring facet
+    # modules/novel-bridge.iml — source roots only, NO hardcoded Maven deps.
+    # IDEA auto-imports Maven from pom.xml and rewrites this file.
     files[".idea/modules/novel-bridge.iml"] = """<?xml version="1.0" encoding="UTF-8"?>
 <module type="JAVA_MODULE" version="4">
-  <component name="FacetManager">
-    <facet type="Spring" name="Spring">
-      <configuration>
-        <fileset id="fileset" name="Spring Application" removed="false">
-          <file>file://$MODULE_DIR$/../../src/main/java/com/achen/novelbridge/NovelBridgeApplication.java</file>
-        </fileset>
-      </configuration>
-    </facet>
-  </component>
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
-    <content url="file://$MODULE_DIR$/../..">
-      <sourceFolder url="file://$MODULE_DIR$/../../src/main/java" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/../../src/main/resources" type="java-resource" />
-      <sourceFolder url="file://$MODULE_DIR$/../../src/test/java" isTestSource="true" />
-      <excludeFolder url="file://$MODULE_DIR$/../../target" />
+    <content url="file://""" + MODULE_ROOT + """">
+      <sourceFolder url="file://""" + MODULE_ROOT + """/src/main/java" isTestSource="false" />
+      <sourceFolder url="file://""" + MODULE_ROOT + """/src/main/resources" type="java-resource" />
+      <sourceFolder url="file://""" + MODULE_ROOT + """/src/test/java" isTestSource="true" />
+      <excludeFolder url="file://""" + MODULE_ROOT + """/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="Maven: org.springframework.boot:spring-boot-starter-web:4.0.6" level="project" />
   </component>
 </module>
 """
@@ -237,6 +245,46 @@ def generate_idea_config(target: Path, dry_run: bool):
 </project>
 """
 
+    # ---- run.bat — one-click startup ----
+    files["run.bat"] = """@echo off
+REM NovelBridge Practice — one-click startup
+REM Run from a plain terminal (not IDEA Terminal).
+
+echo ===== NovelBridge Practice =====
+
+if "%JAVA_HOME%"=="" (
+    echo [ERROR] JAVA_HOME not set.  Set it to your JDK 21 path.
+    pause & exit /b 1
+)
+echo [OK] JAVA_HOME = %%JAVA_HOME%%
+
+where mvn >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] mvn not found on PATH.
+    pause & exit /b 1
+)
+echo [OK] mvn found
+
+echo [INFO] Creating practice database if needed...
+mysql -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS novel_bridge_practice DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" 2>nul
+if errorlevel 1 (
+    echo [WARN] Could not create database automatically.
+    echo   Try: mysql -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS novel_bridge_practice"
+)
+
+echo.
+echo ===== NOTICE =====
+echo 1. Open this directory in IDEA -- it will auto-detect pom.xml
+echo    and offer to import as a Maven project (click "Load").
+echo 2. Or run: cd Novel-Bridge ^&^& mvn spring-boot:run "-Dspring-boot.run.profiles=practice"
+echo ==================
+echo.
+
+cd /d "%%~dp0Novel-Bridge"
+mvn spring-boot:run "-Dspring-boot.run.profiles=practice"
+pause
+"""
+
     generated = []
     for rel_path, content in files.items():
         path = target / rel_path
@@ -251,6 +299,9 @@ def main():
     parser.add_argument("--version", required=True)
     parser.add_argument("--source", default=".")
     parser.add_argument("--target", required=True)
+    parser.add_argument("--inplace", action="store_true",
+                        help="Transform markers in-place without copying the source tree. "
+                             "Useful for git worktree or when .idea/ should persist.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-clean-check", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -260,24 +311,28 @@ def main():
     target = Path(args.target).resolve()
     warnings = []
 
-    if target.exists() and not args.skip_clean_check:
-        clean, detail = git_clean(target)
-        if not clean:
-            output = result("error", "Practice target is not clean.", warnings=[detail], stop_condition="commit_or_stash_practice_changes")
-            print(json.dumps(output, ensure_ascii=False, indent=2) if args.json else output["summary"])
-            return
+    if not args.inplace:
+        if target.exists() and not args.skip_clean_check:
+            clean, detail = git_clean(target)
+            if not clean:
+                output = result("error", "Practice target is not clean.", warnings=[detail], stop_condition="commit_or_stash_practice_changes")
+                print(json.dumps(output, ensure_ascii=False, indent=2) if args.json else output["summary"])
+                return
+        copied = copy_tree(source, target, args.dry_run)
+    else:
+        copied = []
 
-    copied = copy_tree(source, target, args.dry_run)
-    planned, marker_warnings = transform_markers(target if target.exists() else source, args.version, args.dry_run)
+    planned, marker_warnings = transform_markers(target if (target.exists() or not args.inplace) else source, args.version, args.dry_run)
     idea_files = generate_idea_config(target, args.dry_run)
     warnings.extend(marker_warnings)
-    commit = source_commit(source)
+    commit = source_commit(source if not args.inplace else target)
 
     artifacts = []
     if not args.dry_run:
-        meta = target / "docs" / "learn" / "practice-snapshot.json"
-        meta.parent.mkdir(parents=True, exist_ok=True)
-        meta.write_text(json.dumps({"version": args.version, "source_commit": commit}, indent=2) + "\n", encoding="utf-8")
+        meta_parent = target / "docs" / "learn"
+        meta_parent.mkdir(parents=True, exist_ok=True)
+        meta = meta_parent / "practice-snapshot.json"
+        meta.write_text(json.dumps({"version": args.version, "source_commit": commit, "inplace": args.inplace}, indent=2) + "\n", encoding="utf-8")
         artifacts.append(str(meta))
         artifacts.extend(str(target / f) for f in idea_files)
 
@@ -290,6 +345,7 @@ def main():
         next_actions=["Review planned changes", "Run build/tests in practice target after generation"],
         warnings=warnings + ([] if planned else ["No matching practice markers found."]),
         copied_files=len(copied),
+        inplace=args.inplace,
         idea_files_generated=len(idea_files),
         planned_replacements=planned,
         source_commit=commit,

@@ -1,6 +1,7 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelChapter;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -21,4 +22,7 @@ public interface ChapterMapper {
 
     @Select("SELECT * FROM novel_chapter WHERE book_id = #{bookId} ORDER BY chapter_number")
     List<NovelChapter> findByBookIdOrderByChapterNumber(@Param("bookId") Long bookId);
+
+    @Delete("DELETE FROM novel_chapter WHERE book_id = #{bookId}")
+    int deleteByBookId(@Param("bookId") Long bookId);
 }

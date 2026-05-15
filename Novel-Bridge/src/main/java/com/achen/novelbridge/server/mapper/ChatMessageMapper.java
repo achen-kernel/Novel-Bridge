@@ -1,6 +1,7 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelChatMessage;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -19,4 +20,8 @@ public interface ChatMessageMapper {
 
     @Select("SELECT * FROM novel_chat_message WHERE session_id = #{sessionId} ORDER BY message_index")
     List<NovelChatMessage> findBySessionIdOrderByMessageIndex(@Param("sessionId") Long sessionId);
+
+    @Delete("DELETE FROM novel_chat_message WHERE session_id IN "
+            + "(SELECT id FROM novel_chat_session WHERE book_id = #{bookId})")
+    int deleteByBookId(@Param("bookId") Long bookId);
 }
