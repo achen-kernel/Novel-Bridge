@@ -187,8 +187,8 @@ def extract_entities_from_chunk(
             response = llm.chat_completion(
                 messages=messages,
                 temperature=0.1 if attempt > 0 else 0.3,
-                max_tokens=2048,
-                response_format=schema,
+                max_tokens=512,
+                # 不使用 response_format 避免模型返回空，靠 prompt 保证 JSON 输出
             )
             duration_ms = response.get("_duration_ms", 0)
             final_output = llm.extract_text(response)

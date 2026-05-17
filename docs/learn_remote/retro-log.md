@@ -62,6 +62,15 @@
   3. prompt 模板中 JSON 结构改为单行紧凑格式，避免 `str.format()` 的 `{}` 冲突
 - **教训**：复杂 JSON Schema 在小模型上不一定稳定。Demo 5B 先用 prompt 约束 + 后处理解析更可靠。外部 wiki/百科支持留到 Demo 6。
 
+### 坑 10：实体抽取同样因 `response_format` 返回空内容
+- **现象**：所有 entity extraction 的 model_run 全部 FAILED，错误 `JSON parse error: Expecting value: line 1 column 1 (char 0)`，duration_ms 约 30-35 秒
+- **根因**：实体抽取用了 `_build_json_schema()` 的嵌套 JSON Schema（`entities[]`→7字段 object），和书籍总览完全一样的问题——llama.cpp 无法正确约束复杂 schema，返回空
+- **修复**：
+  1. 去掉 `response_format=schema`，和书籍总览一致
+  2. prompt 模板直接写入 JSON 格式示例
+  3. 保留后处理校验（evidence 原文检查、字段非空等）作为质量保证
+- **教训**：对 Qwen3.6-35B-A3B MoE 模型，`response_format` 不可靠。全链路统一用 prompt 约束 + 后处理校验。后处理校验比 schema 约束更灵活、可调试。
+
 ## 2026-05-16 — vibe-learn_remote 增加 Python 学习线
 
 ### 背景

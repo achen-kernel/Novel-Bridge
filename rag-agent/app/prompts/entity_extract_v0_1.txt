@@ -8,6 +8,10 @@
 5. confidence 范围为 0 到 1。
 6. 不确定时 uncertain=true。
 7. 没有结果时 entities=[]。
+8. 只输出 JSON，不要多余解释文字。
+
+输出 JSON 格式：
+{"chapter_id": 0, "chunk_id": 0, "entities": [{"name": "", "type": "CHARACTER|LOCATION|ITEM|ORG|TITLE|UNKNOWN", "aliases": [], "description": "", "evidence_text": "", "confidence": 0.0, "uncertain": false}], "uncertain_items": []}
 
 输入：
 book_title: {book_title}

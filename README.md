@@ -165,9 +165,12 @@ Spring Boot 通过 profile 切换数据库连接：
 - **审核流**：候选实体审核、入图确认（Demo 5B+）
 
 ### rag-agent (Python)
-- **LLM 编排**：构造 Prompt + GBNF/JSON Schema → 调用 llama.cpp
+- **书籍构建管线**：POST /build → 书籍总览分析 → 章节切分（规则+LLM） → 文本分块 → 实体抽取
+- **双卡 GPU 推理**：2×RTX 3090，Qwen3.6-35B-A3B MoE 模型，~60-80 tok/s
+- **LLM 编排**：构造 Prompt（非 response_format，避开 MoE 模型输出限制） → 调用 llama.cpp
 - **结果校验**：JSON 解析、Schema 验证、证据文本校验、重试控制
-- **图谱写入**：审核通过数据写入 Neo4j
+- **审核流**：候选 approve/reject/edit → 通过后写入 Neo4j（Entity + APPEARS_IN 关系）
+- **数据追踪**：每个 chunk 调用记录 model_run，prompt/output/error 全部持久化
 - **健康检查**：聚合报告 llama / MySQL / Neo4j / Chroma 状态
 
 ### 部署脚本
@@ -186,7 +189,7 @@ Spring Boot 通过 profile 切换数据库连接：
 | Demo 3 | 最小问答带引用 | ✅ completed |
 | Demo 4 | 最小三栏工作台 | ✅ completed |
 | **Demo 5A** | **远程 Linux 服务底座** | **✅ completed** |
-| Demo 5B | Chunk / 实体抽取 / 审核闭环 | 待开始 |
+| **Demo 5B** | **Chunk + 实体抽取闭环** | **✅ completed** |
 | Demo 6 | 关系/事件/Claim + 图谱增强 | 规划中 |
 | Demo 7 | GraphRAG QA + 微调数据准备 | 规划中 |
 

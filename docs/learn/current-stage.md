@@ -1,9 +1,9 @@
 # current-stage.md
 
-阶段 id：demo-5a-remote-foundation
-状态：in_progress
+阶段 id：demo-5b-entity-extraction
+状态：completed
 循环：demo-first
-轮次：Demo 5A
+轮次：Demo 5B
 
 ## 功能目标
 
