@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibe Learn"
+  short_description: "Demo-first vibe coding learning harness"
+  default_prompt: "Use this skill to build small verifiable demos, split oversized work, maintain compact learning state and project adapters, record retros, and create Java/Python practice snapshots only when they add real project learning value."

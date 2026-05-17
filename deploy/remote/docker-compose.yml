@@ -1,44 +1,40 @@
-# ============================================================
-# NovelBridge — Docker Compose for Remote Linux
-# Usage: docker compose up -d mysql neo4j
-# ============================================================
-
-version: "3.9"
-
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.4
     container_name: novelbridge-mysql
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${MYSQL_PORT:-13306}:3306"
+      - "127.0.0.1:13306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-novel_bridge}
+      MYSQL_USER: ${MYSQL_USER:-novel_bridge}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
     volumes:
-      - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
-      - ../../Novel-Bridge/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - /home/wk/novelbridge/data/mysql:/var/lib/mysql
 
   neo4j:
     image: neo4j:5-community
     container_name: novelbridge-neo4j
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${NEO4J_HTTP_PORT:-17474}:7474"
-      - "127.0.0.1:${NEO4J_BOLT_PORT:-17687}:7687"
+      - "127.0.0.1:17474:7474"
+      - "127.0.0.1:17687:7687"
     environment:
-      NEO4J_AUTH: ${NEO4J_AUTH:?NEO4J_AUTH is required (neo4j/password)}
+      NEO4J_AUTH: ${NEO4J_AUTH}
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 4G
+      NEO4J_server_memory_pagecache_size: 2G
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+      TZ: Asia/Shanghai
     volumes:
-      - ${NEO4J_DATA_DIR:-./data/neo4j}:/data
-      - ${NEO4J_LOG_DIR:-./logs/neo4j}:/logs
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - /home/wk/novelbridge/data/neo4j/data:/data
+      - /home/wk/novelbridge/data/neo4j/logs:/logs
+      - /home/wk/novelbridge/data/neo4j/import:/var/lib/neo4j/import
+      - /home/wk/novelbridge/data/neo4j/plugins:/plugins

@@ -1,0 +1,14 @@
+任务：分析整本书的文本结构，判断其章节/回/故事集的划分方式。
+
+规则：
+1. 只根据文本前缀判断，不要补充书中不存在的内容。
+2. 输出结构类型：CHAPTER（第X章）、HUI（第X回）、STORY（故事集如聊斋）、SECTION（篇/卷/经）、NONE（无明显章节）。
+3. 如果章节标题可以被正则识别，优先使用正则。
+4. 只有正则无法确定时才用 LLM 分类。
+
+输出格式：
+{{
+  "structure_type": "CHAPTER|HUI|STORY|SECTION|NONE",
+  "confidence": 0.0-1.0,
+  "description": "简短说明"
+}}

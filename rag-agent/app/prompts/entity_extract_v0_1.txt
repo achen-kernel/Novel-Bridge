@@ -1,0 +1,18 @@
+任务：从小说片段中抽取实体候选。
+
+规则：
+1. 只抽取当前片段中明确出现的实体。
+2. 不要根据你对整本书的记忆补充信息。
+3. aliases 只填写片段中出现的别名或称呼。
+4. evidence_text 必须是原文中能支持该实体存在的短句。
+5. confidence 范围为 0 到 1。
+6. 不确定时 uncertain=true。
+7. 没有结果时 entities=[]。
+
+输入：
+book_title: {book_title}
+chapter_id: {chapter_id}
+chapter_title: {chapter_title}
+chunk_id: {chunk_id}
+text:
+{chunk_text}

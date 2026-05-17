@@ -1,0 +1,25 @@
+{
+  "schema": "vtl-state-v0.2",
+  "project_name": "NovelBridge-Remote",
+  "project_mode": "remote_rag_agent_development",
+  "loop": "demo-first",
+  "learner_goal": "java-backend-to-ai-fullstack",
+  "main_branch": "master",
+  "practice_branch": "practice",
+  "active_stage": "demo-5b-entity-extraction",
+  "stage_status": "planned",
+  "backend_root": null,
+  "frontend_root": null,
+  "rag_root": "apps/rag-agent",
+  "docs_root": "docs/learn_remote",
+  "skill_package_root": ".opencode/skills/vibe-learn_remote",
+  "cost_mode": "low",
+  "doc_policy": "compact_event_driven",
+  "skill_feedback_policy": "log_first_edit_on_request",
+  "updated_at": "2026-05-17T00:00:00+08:00",
+  "notes": [
+    "This is the remote upload-bundle state file.",
+    "Demo 5A remote foundation is treated as connected by the user.",
+    "Remote agent should work on Demo 5B only: chunk, model_run, entity candidate, review, and minimal approved Neo4j write."
+  ]
+}

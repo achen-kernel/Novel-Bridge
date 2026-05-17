@@ -1,16 +1,16 @@
 {
   "schema": "vtl-adapter-v0.1",
-  "project_name": "NovelBridge-Agents",
-  "backend_root": "Novel-Bridge",
+  "project_name": "NovelBridge-Remote",
+  "backend_root": null,
   "frontend_root": null,
-  "rag_root": "rag-agent",
-  "docs_root": "docs/learn",
+  "rag_root": "apps/rag-agent",
+  "docs_root": "docs/learn_remote",
   "data_root": "data",
-  "skill_package_root": ".opencode/skills/vibe-learn",
+  "skill_package_root": ".opencode/skills/vibe-learn_remote",
   "notes": [
-    "The Spring Boot backend currently lives under Novel-Bridge instead of the repository root.",
-    "rag-agent Python service created at rag-agent/.",
-    "Use this adapter before changing scan scripts or assuming root-level pom.xml.",
-    "Old skill at .reasonix/ is deprecated — migrated to .opencode/skills/vibe-learn."
+    "Remote Linux workspace is rooted at /home/wk/novelbridge.",
+    "The remote rag-agent service lives under apps/rag-agent.",
+    "The Java Spring Boot backend remains primarily in the local Windows repository and is not required for ordinary remote rag-agent development.",
+    "Do not treat runtime data, models, logs, env, or pid files as source files."
   ]
 }

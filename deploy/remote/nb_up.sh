@@ -104,12 +104,23 @@ if command -v "$LLAMA_BIN" &>/dev/null || [[ -x "$LLAMA_BIN" ]]; then
   if ss -tlnp | grep -q "127.0.0.1:${LLAMA_PORT}"; then
     log "llama-server 已在运行，跳过"
   else
+    # GPU layers: default -ngl 99 (all layers on GPU).
+    # Override via LLAMA_NGL env var (e.g. LLAMA_NGL=0 for CPU).
+    NGL="${LLAMA_NGL:-99}"
+    # Dual-GPU split mode: enable via LLAMA_SPLIT_MODE=row
+    SPLIT="${LLAMA_SPLIT_MODE:-}"
+    GPU_ARGS="-ngl $NGL"
+    if [[ -n "$SPLIT" ]]; then
+      GPU_ARGS="$GPU_ARGS --split-mode $SPLIT"
+    fi
+
     nohup "$LLAMA_BIN" \
       --host "$LLAMA_HOST" \
       --port "$LLAMA_PORT" \
       -m "$LLAMA_MODEL_PATH" \
       --ctx-size 8192 \
       --no-mmap \
+      $GPU_ARGS \
       > "$LOG_DIR/llama.cpp/llama-server.log" 2>&1 &
     LLAMA_PID=$!
     log "llama-server PID: $LLAMA_PID"

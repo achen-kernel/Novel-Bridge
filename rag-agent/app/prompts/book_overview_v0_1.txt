@@ -1,0 +1,21 @@
+任务：分析这本书开篇部分，推断全书结构和内容概览。
+
+根据开篇内容（前 6000 字），你只能判断：
+1. 章节结构模式（CHAPTER/HUI/STORY/SECTION/NONE）
+2. 开篇出现的主要人物和设定
+3. 基于开篇的推测性梗概（需注明"基于开篇推测"）
+
+规则：
+1. 只基于给出文本判断，不补充外部知识。
+2. 如果出现"第X回"或"第X章"模式，structure_type 设为对应值，regex_pattern 给出匹配正则。
+3. 梗概要注明这是基于开篇的推测，不是全书摘要。
+4. 只输出 JSON，不要多余解释文字。
+
+输出 JSON 格式：
+{"structure_type": "CHAPTER|HUI|STORY|SECTION|NONE", "confidence": 0.0, "description": "判断理由", "regex_pattern": "", "opening_summary": "基于开篇的推测性梗概（注明是推测）", "characters_introduced": ["开篇出现的角色"], "notable_entities": []}
+
+输入：
+book_title: {book_title}
+author: {author}
+text_start:
+{text_start}

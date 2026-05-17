@@ -40,3 +40,7 @@ book-test/
 
 # ===== Private context for user-guided Codex sessions =====
 docs/private/
+
+# ===== Remote sync temp files =====
+apps/
+sync.tar.gz
