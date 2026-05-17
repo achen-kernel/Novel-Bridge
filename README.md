@@ -29,7 +29,7 @@
 └──────────────────────────────────────────────────┘
                          │ SSH Tunnel / HTTP
                          ▼
-┌─ Linux 远程 (192.168.3.50) ────────────────────┐
+┌─ Linux 远程 (&lt;remote-ip&gt;) ────────────────────┐
 │                                                  │
 │  MySQL (:13306)          业务数据存储             │
 │  Neo4j (:17474/:17687)   知识图谱                 │
@@ -100,10 +100,10 @@ Novel-Bridge/
 
 ---
 
-## 远程服务器结构（`/home/wk/novelbridge/`）
+## 远程服务器结构（`~/novelbridge/`）
 
 ```
-/home/wk/novelbridge/
+~/novelbridge/
 ├── apps/
 │   ├── llama.cpp/              ← llama-server 可执行文件
 │   └── rag-agent/              ← Python FastAPI 服务
@@ -210,8 +210,8 @@ mvn spring-boot:run
 # 浏览器打开 http://localhost:8080
 
 # 远程部署（上传脚本后）
-ssh wk@192.168.3.50
-cd /home/wk/novelbridge/deploy/remote
+ssh &lt;remote-user&gt;@&lt;remote-ip&gt;
+cd ~/novelbridge/deploy/remote
 bash nb_up.sh
 
 # 本地连远程开发
