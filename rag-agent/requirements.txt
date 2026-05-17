@@ -1,0 +1,6 @@
+# NovelBridge rag-agent — Demo 5A
+# 安装: pip install -r requirements.txt
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.0.0

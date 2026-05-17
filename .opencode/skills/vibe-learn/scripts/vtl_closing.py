@@ -3,7 +3,7 @@
 vtl_closing.py — Verify vibe-learn Closing Checklist items.
 
 Checks whether a demo cycle has been properly closed:
-1. @VTL-PRACTICE markers exist in backend Java code
+1. Practice decision exists: @VTL-PRACTICE markers or documented skip reason
 2. retro-log.md has recent entries
 3. personal-vibecoding-playbook.md exists
 4. vtl-feedback-log.md exists (if skill-level blockers occurred)
@@ -54,8 +54,8 @@ def find_state(root: Path):
     return None
 
 
-def check_practice_markers(backend_root: Path) -> dict:
-    """Check if @VTL-PRACTICE markers exist in Java files."""
+def check_practice_decision(backend_root: Path, docs_root: Path) -> dict:
+    """Check if @VTL-PRACTICE markers exist or practice was explicitly skipped."""
     markers = []
     java_files = list(backend_root.rglob("*.java"))
     for jf in java_files:
@@ -71,10 +71,27 @@ def check_practice_markers(backend_root: Path) -> dict:
                         "line": i,
                         "line_text": line.strip()
                     })
+    if markers:
+        return {
+            "status": "GREEN",
+            "detail": f"{len(markers)} @VTL-PRACTICE marker(s) found",
+            "markers": markers,
+        }
+
+    practice_plan = docs_root / "practice-plan.md"
+    if practice_plan.exists():
+        content = practice_plan.read_text(encoding="utf-8", errors="ignore")
+        if "SKIP-PRACTICE" in content or "跳过练习" in content:
+            return {
+                "status": "GREEN",
+                "detail": "No markers found, but practice skip reason is documented",
+                "markers": [],
+            }
+
     return {
-        "status": "GREEN" if markers else "RED",
-        "detail": f"{len(markers)} @VTL-PRACTICE marker(s) found",
-        "markers": markers,
+        "status": "RED",
+        "detail": "No @VTL-PRACTICE markers and no documented practice skip reason",
+        "markers": [],
     }
 
 
@@ -145,7 +162,7 @@ def main():
 
     # Run all checks
     checks = {
-        "practice_markers": check_practice_markers(backend_root),
+        "practice_decision": check_practice_decision(backend_root, docs_root),
         "retro_log": check_retro_log(docs_root),
         "playbook": check_playbook(docs_root),
         "feedback_log": check_feedback_log(docs_root),
@@ -156,10 +173,10 @@ def main():
 
     items = [
         {
-            "id": "practice_markers",
-            "label": "@VTL-PRACTICE markers in code",
-            "status": checks["practice_markers"]["status"],
-            "detail": checks["practice_markers"]["detail"],
+            "id": "practice_decision",
+            "label": "Practice markers or documented skip reason",
+            "status": checks["practice_decision"]["status"],
+            "detail": checks["practice_decision"]["detail"],
         },
         {
             "id": "retro_log",

@@ -11,7 +11,10 @@
 | Demo 2 | 构建任务可追踪 | AgentRun/AgentStep 记录导入/切章/保存步骤 | 暂不接 Python RAG | 失败和成功都能查询状态/errorMessage | in_progress |
 | Demo 3 | 最小问答带引用 | ChatSession/ChatMessage/Citation；关键词检索章节 | 可先不接 LLM，用模板回答 | 提问返回答案和 chapter 引用 | planned |
 | Demo 4 | 最小三栏工作台 | 左侧书籍，中间问答，右侧引用 | UI 可简陋；无复杂审核 | 浏览器可完成一次问答并看到引用 | planned |
-| Demo 5 | 替换关键 mock | 接 Python 切章、chunk、模型抽取 | Chroma/FTS 可分步接入 | 样例书完整构建并可追溯问答 | planned |
+| Demo 5A | 远程服务底座 | Linux 上一键启动 MySQL/Neo4j/向量库/llama.cpp/rag-agent | 不做抽取业务闭环 | health check 全绿，Spring Boot 可连 rag-agent | planned |
+| Demo 5B | 实体抽取闭环 | chunk、model_run、entity candidate、最小审核、Neo4j Entity 写入 | 不做关系/事件/Claim/QA | 样例 chunk 能生成实体候选、记录模型调用、审核后入图 | planned |
+| Demo 6 | 图谱抽取增强 | relation/event/claim 抽取、实体合并、冲突检测、审核增强 | 暂不微调 | 审核通过的关系/事件/Claim 可追溯入图 | planned |
+| Demo 7 | GraphRAG QA 与数据沉淀 | BM25/向量检索、图谱扩展、带 citation QA、评测与训练数据导出 | 不做生产高并发 | 问答有引用，证据不足拒答，可导出 SFT/QLoRA 样本 | planned |
 
 ## Demo 核心表
 
@@ -36,8 +39,8 @@ novel_citation
 
 | 来源轮次 | 债务 | 为什么允许 | 何时硬化 | 状态 |
 |---|---|---|---|---|
-| Demo 1 | 简单切章规则（正则 `第X回`） | 先验证导入和持久化链路 | Demo 5 接 Python splitter | active |
-| Demo 3 | 模板回答或 mock LLM | 先验证 Chat/Citation 数据链路 | Demo 5 接本地模型 | planned |
+| Demo 1 | 简单切章规则（正则 `第X回`） | 先验证导入和持久化链路 | Demo 5B 后再接 Python splitter 或增强 chunker | active |
+| Demo 3 | 模板回答或 mock LLM | 先验证 Chat/Citation 数据链路 | Demo 7 接 GraphRAG QA | planned |
 | Demo 1-3 | 默认用户/项目 | 降低早期表和权限复杂度 | Demo 4 前补 User/Project/Folder | planned |
 
 ## 完成红线

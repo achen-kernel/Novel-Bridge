@@ -37,3 +37,6 @@ data/workspace/*
 # ===== Env =====
 .env
 book-test/
+
+# ===== Private context for user-guided Codex sessions =====
+docs/private/

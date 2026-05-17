@@ -1,11 +1,11 @@
 ---
 name: vibe-learn
-description: Demo-first learning harness for vibe coding. Use when a beginner or junior developer is building a Java/Spring Boot, Vue, MySQL, Redis, or similar project with an AI coding agent and wants a small working demo first, then staged hardening, compact learning docs, project-structure adapters, practice TODO snapshots, bug/agent retros, and a personal AI coding playbook.
+description: Demo-first learning harness for vibe coding. Use when a beginner or junior developer is building a Java/Spring Boot, Vue, MySQL, Redis, Python service, local LLM, or similar project with an AI coding agent and wants small verifiable demos, staged hardening, compact learning docs, project-structure adapters, scope control, bug/agent retros, optional Java/Python practice snapshots, and a personal AI coding playbook.
 ---
 
 # Vibe Learn
 
-Use this skill as a low-token companion harness for Java project learning through AI-assisted development.
+Use this skill as a low-token companion harness for project learning through AI-assisted development, with Java/Spring Boot as the main backend lane and Python as an explicit growth lane when the project uses scripts, data pipelines, `rag-agent`, model calls, or service orchestration.
 
 The default path is **demo first, then harden, then practice**. Do not expose several "modes" to the user unless they ask. A normal project loop already starts with a small demo and expands it.
 
@@ -18,7 +18,8 @@ Guide the agent to:
 - Keep learning state in compact project docs, not in long chat history.
 - Explain only the current learning point, current risk, and next action.
 - Preserve a clear line between shipped code, mock code, deferred work, and practice code.
-- Convert bugs, agent drift, and learner weak spots into reusable prompts and habits.
+- Convert bugs, agent drift, scope creep, and learner weak spots into reusable prompts and habits.
+- Use suitable Python work as learning material when the project naturally includes Python services, deployment scripts, data processing, LLM calls, evaluation, or automation.
 
 ## Default Loop
 
@@ -30,7 +31,7 @@ Use one loop:
 4. **Demo slice**: implement one end-to-end path with explicit mocks or shortcuts.
 5. **Evidence**: verify with build/test/API/page/manual evidence before calling it done.
 6. **Harden**: replace mocks, add validation, persistence, errors, tests, and cleaner boundaries.
-7. **Practice**: mark valuable complete code with `@VTL-PRACTICE`; generate snapshots only on request or checkpoint.
+7. **Practice decision**: either mark valuable complete Java/Python code with `@VTL-PRACTICE` or record why practice is skipped for this cycle.
 8. **Retro**: record bugs, agent drift, design changes, and skill improvement candidates.
 
 ## Default Project Docs
@@ -53,6 +54,34 @@ Read these only when the event requires it:
 
 If `practice-plan.md` or `personal-vibecoding-playbook.md` is missing, create it at the first stage close, first practice snapshot, or first user request for growth retrospection.
 
+### Personal Notes Convention
+
+Project-specific server setup pitfalls, environment config records, deployment troubleshooting, and user-specific playbook entries should go in `docs/personal-notes/`, **not** in `docs/learn/`.
+
+Rationale:
+- `docs/learn/` is for reusable learning artifacts (retros, practice plans, flow maps).
+- `docs/personal-notes/` is for machine-specific or deployment-specific history that would confuse new agents if read by default.
+
+When a project uses this directory, the orchestrator's `AGENTS.md` should reference it in a hard rule so new agents know to read it before performing server operations.
+
+## Scope Slicing Rule
+
+When a demo includes several independent concerns, split it before implementation.
+
+Split especially when one stage includes two or more of:
+
+- remote deployment or service startup
+- database schema changes
+- model inference or prompt/grammar work
+- graph/vector/search infrastructure
+- frontend review UI
+- online QA
+- fine-tuning or evaluation
+
+Name slices explicitly, such as `demo-5a-remote-foundation`, `demo-5b-entity-extraction`, `demo-6-graph-hardening`, and `demo-7-graphrag-qa`.
+
+Do not let the agent implement a full platform just because the requirement document describes the final system.
+
 ## Project Structure Adapter
 
 Do not assume the repository root is the backend root.
@@ -64,6 +93,34 @@ Prefer `.vtl/vtl-adapter.json` when present. Otherwise, discover service roots r
 - Python service: `pyproject.toml`, `requirements.txt`, `app/`, `src/`
 
 If scripts mis-detect the structure, update the adapter first. Do not rewrite the project to fit the script.
+
+## Python Learning Lane
+
+When the project includes Python, treat it as a first-class learning track, not just glue code.
+
+Use Python learning opportunities when they are already part of the current demo slice:
+
+- `rag-agent` endpoints, request/response models, health checks, and service boundaries
+- text chunking, extraction, validation, review queues, and dataset export
+- LLM client code, prompt/grammar calls, retry/error handling, and structured output parsing
+- Chroma or vector-index persistence and retrieval code
+- deployment or orchestration scripts that are safer in Python than shell
+- evaluation scripts, fixtures, and small reproducible test harnesses
+
+Do not invent unrelated Python exercises. The best Python practice comes from verified project code that the learner needs to understand or maintain.
+
+For Python practice candidates, prefer functions/classes with real learning value:
+
+- parsing and validation logic
+- typed request/response schemas
+- service boundary code
+- database/vector-store access
+- deterministic extraction or normalization steps
+- tests that demonstrate edge cases
+
+Avoid turning environment setup, one-off shell wrappers, or trivial FastAPI boilerplate into practice unless the learner specifically asks.
+
+When a cycle contains meaningful Python work, the retro should include one concise Python learning note: what concept was practiced, where the code lives, and what to revisit later.
 
 ## Skill Evolution
 
@@ -94,7 +151,7 @@ When an orchestrator agent uses this skill through a project-level `AGENTS.md`, 
 The project's `AGENTS.md` should contain:
 
 1. A `Vibe-Learn Closing Checklist` section with these items:
-   - `@VTL-PRACTICE` markers on code with genuine learning value
+   - `@VTL-PRACTICE` markers on code with genuine learning value, or a documented practice skip reason
    - `docs/learn/retro-log.md` update with bugs, agent drift, decisions
    - `docs/learn/personal-vibecoding-playbook.md` update
    - `docs/learn/vtl-feedback-log.md` update for skill-level blockers
@@ -118,12 +175,12 @@ python .opencode\skills\vibe-learn\scripts\vtl_closing.py --root . --json
 - Agent only acts on RED items, skips GREEN = significant token savings per cycle
 
 The script checks:
-1. `@VTL-PRACTICE markers` → scans `.java` files in backend root
+1. `Practice decision` → scans `.java` files for `@VTL-PRACTICE`, or checks `practice-plan.md` for an explicit skip reason
 2. `retro-log.md` → verifies existence and dated entry sections
 3. `personal-vibecoding-playbook.md` → verifies existence
 4. `vtl-feedback-log.md` → verifies existence (YELLOW if missing, not blocking)
 
-The orchestrator agent runs this script after Evidence/Verify and fixes any RED result before declaring the stage closed.
+The orchestrator agent runs this script after Evidence/Verify and fixes any RED result before declaring the stage closed. For infrastructure-only cycles, a documented practice skip is acceptable.
 
 ## Project structure convention (from project-skeleton.md)
 
@@ -168,9 +225,11 @@ These are documented in detail in `docs/learn/project-skeleton.md` (read-only re
 
 Only code marked with `@VTL-PRACTICE` may be converted to TODO practice.
 
-Prefer methods with real learning value: business branching, database access, DTO/VO conversion, validation, exception handling, transaction logic, or full-stack field mapping.
+Practice is optional for infrastructure, deployment, planning, or prompt-only cycles. In those cases, record a skip reason in `docs/learn/practice-plan.md` instead of forcing weak practice markers.
 
-Avoid getters, setters, trivial wrappers, pure utilities, generated code, or code the learner cannot reasonably complete from the current stage.
+Prefer methods or functions with real learning value: business branching, database access, DTO/VO conversion, validation, exception handling, transaction logic, full-stack field mapping, typed Python schemas, service calls, parsing, chunking, extraction, vector-store access, or evaluation harness logic.
+
+Avoid getters, setters, trivial wrappers, pure utilities, generated code, simple FastAPI route shells, environment boilerplate, or code the learner cannot reasonably complete from the current stage.
 
 ## Practice Snapshots And Growth Assets
 
