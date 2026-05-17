@@ -2,6 +2,31 @@
 -- 7 tables for Demo 1-3
 -- Created by Spring SQL init on startup
 
+-- ============================================================
+-- Demo 5B: novel_book_source — Java upload table, remote rag-agent reads
+-- Java writes this + novel_book; rag-agent owns downstream artifacts
+-- ============================================================
+CREATE TABLE IF NOT EXISTS novel_book_source (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    book_id BIGINT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    author VARCHAR(100),
+    source_filename VARCHAR(255) NOT NULL,
+    file_type VARCHAR(10),
+    file_size BIGINT,
+    content_hash VARCHAR(64),
+    raw_text LONGTEXT NOT NULL,
+    encoding VARCHAR(20) DEFAULT 'UTF-8',
+    status VARCHAR(20) DEFAULT 'UPLOADED',
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by VARCHAR(50),
+    updated_by VARCHAR(50),
+    INDEX idx_source_book (book_id),
+    UNIQUE INDEX idx_source_hash (content_hash)
+);
+
 CREATE TABLE IF NOT EXISTS novel_book (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     project_id BIGINT,

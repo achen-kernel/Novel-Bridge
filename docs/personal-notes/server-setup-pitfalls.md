@@ -706,6 +706,58 @@ sudo usermod -aG docker wk
 
 `-NoNewWindow` 和 `-WindowStyle Hidden` 在 PowerShell 5.1 不能同时使用。改为只用 `-WindowStyle Hidden`。
 
+**MySQL 编码问题：TXT 文件编码与 MySQL 不一致导致乱码**
+
+现象：上传 TXT 后，远程 MySQL 中 `novel_book_source.raw_text` 存的是乱码，后续 rag-agent 无法正确切章抽实体。
+
+原因：
+- 中文 TXT 文件常见编码为 GBK/GB18030
+- Java 上传服务默认用 `new String(fileBytes, StandardCharsets.UTF_8)` 读取
+- GBK 文件用 UTF-8 解码 → 乱码 → 存 MySQL → 后续全部脏数据
+
+修复三处对齐：
+
+1. **JDBC URL** 必须声明 UTF-8 连接：
+   ```
+   jdbc:mysql://.../novel_bridge?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci
+   ```
+
+2. **上传接口** 新增 `encoding` 参数，支持指定文件编码：
+   ```powershell
+   curl -X POST .../upload -F "file=@book.txt" -F "encoding=GBK"
+   ```
+
+3. **Java 代码** 用 `new String(fileBytes, Charset.forName(encoding))` 替代硬编码 UTF-8。
+
+2026-05-17 更新：建议统一用 UTF-8
+- MySQL 建库是 `utf8mb4`，JDBC URL 已指定 `characterEncoding=UTF-8`
+- 如果 TXT 文件本身也是 UTF-8，整个链路就全是 UTF-8，不需要额外指定 encoding
+- `encoding` 参数作为安全网保留，但默认 UTF-8，只有遇到 GBK 文件才手动传 `encoding=GBK`
+- 如果不确定 TXT 编码：用 VS Code 打开看右下角编码，或 `file book.txt` 查看
+
+经验：
+- 不要假设上传的 TXT 一定是 UTF-8，中文环境下 GBK/GB18030 非常常见
+- `content_hash` 应在编码转换**前**计算（对原始字节做 SHA-256），这样同文件不同编码也能识别为不同版本
+- `novel_book_source.encoding` 字段记录实际使用的编码，供下游 rag-agent 参考
+
+**唯一索引冲突：重复上传同一文件**
+
+现象：`Duplicate entry 'xxx' for key 'idx_source_hash'`，违反 `novel_book_source.content_hash` 唯一索引。
+
+原因：`content_hash` 是文件的 SHA-256，相同文件会算出相同 hash。`schema.sql` 中 `content_hash` 是 `UNIQUE INDEX`，第二次插入直接报错。
+
+处理（已在代码中处理，不依赖 DB 报错）：
+```java
+// 上传前先查 hash 是否存在
+Optional<NovelBookSource> existing = bookSourceMapper.findByContentHash(contentHash);
+if (existing.isPresent()) {
+    // 直接抛异常，GlobalExceptionHandler 返回清晰提示
+    throw new IllegalArgumentException("File already uploaded (source_id=" + ... + ")");
+}
+```
+
+这样重复上传返回的是 400 + 明确提示"File already uploaded"，而不是 500 + 唯一索引冲突。
+
 ## 后续处理建议
 
 1. 清理异常 `{rag-agent}` 目录。
