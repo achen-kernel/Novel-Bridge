@@ -1,0 +1,1 @@
+docker exec novel-bridge-mysql mysql -uroot -pnovel123 -e "SELECT user, host FROM mysql.user WHERE user = 'novel_bridge';"

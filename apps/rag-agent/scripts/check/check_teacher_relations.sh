@@ -1,0 +1,1 @@
+echo "SELECT source_entity_name, relation_type, target_entity_name FROM novel_relation_fact WHERE book_id = 6 AND relation_type LIKE '%师徒%' OR relation_type LIKE '%弟子%' OR relation_type LIKE '%徒弟%';" | docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4

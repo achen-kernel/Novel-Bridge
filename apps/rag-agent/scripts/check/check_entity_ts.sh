@@ -1,0 +1,1 @@
+echo "SELECT id, canonical_name, aliases_json FROM novel_entity_profile WHERE book_id = 6 AND canonical_name = '唐僧';" | docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4

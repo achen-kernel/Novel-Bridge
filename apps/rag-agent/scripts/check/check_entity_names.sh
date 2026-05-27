@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge -e "SELECT canonical_name FROM novel_entity_profile WHERE book_id = 6 AND canonical_name LIKE '%唐%' LIMIT 10;"

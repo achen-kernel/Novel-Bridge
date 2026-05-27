@@ -1,16 +1,30 @@
 package com.achen.novelbridge.pojo.entity;
 
-import com.achen.novelbridge.common.base.BaseEntity;
-import com.achen.novelbridge.common.enums.ChatRole;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 
-@Getter
-@Setter
-public class NovelChatMessage extends BaseEntity {
+import java.time.LocalDateTime;
+
+/**
+ * Chat message within a QA session.
+ *
+ * @NB-DATA-WRITE
+ */
+@Data
+public class NovelChatMessage {
+
+    private Long id;
 
     private Long sessionId;
-    private ChatRole role;
+
+    private Long bookId;
+
+    private String role;
+
     private String content;
+
     private Integer messageIndex;
+
+    private Long modelCallId;
+
+    private LocalDateTime createdAt;
 }

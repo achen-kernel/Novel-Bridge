@@ -3,38 +3,36 @@ services:
     image: mysql:8.4
     container_name: novelbridge-mysql
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
-      - "127.0.0.1:13306:3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-novel_bridge}
-      MYSQL_USER: ${MYSQL_USER:-novel_bridge}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      TZ: Asia/Shanghai
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-time-zone=+08:00
+      - "127.0.0.1:${MYSQL_PORT:-13306}:3306"
     volumes:
-      - /home/wk/novelbridge/data/mysql:/var/lib/mysql
+      - ${MYSQL_DATA_DIR:-/home/wk/novelbridge/data/mysql}:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
 
   neo4j:
     image: neo4j:5-community
     container_name: novelbridge-neo4j
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
-      - "127.0.0.1:17474:7474"
-      - "127.0.0.1:17687:7687"
-    environment:
-      NEO4J_AUTH: ${NEO4J_AUTH}
-      NEO4J_server_memory_heap_initial__size: 1G
-      NEO4J_server_memory_heap_max__size: 4G
-      NEO4J_server_memory_pagecache_size: 2G
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*
-      NEO4J_dbms_security_procedures_allowlist: apoc.*
-      TZ: Asia/Shanghai
+      - "127.0.0.1:${NEO4J_HTTP_PORT:-17474}:7474"
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-17687}:7687"
     volumes:
-      - /home/wk/novelbridge/data/neo4j/data:/data
-      - /home/wk/novelbridge/data/neo4j/logs:/logs
-      - /home/wk/novelbridge/data/neo4j/import:/var/lib/neo4j/import
-      - /home/wk/novelbridge/data/neo4j/plugins:/plugins
+      - ${NEO4J_DATA_DIR:-/home/wk/novelbridge/data/neo4j}:/data
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: novelbridge-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-16333}:6333"
+      - "127.0.0.1:16334:6334"
+    volumes:
+      - ${QDRANT_DATA_DIR:-/home/wk/novelbridge/data/qdrant}:/qdrant/storage

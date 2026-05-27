@@ -1,19 +1,42 @@
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
 # ===== Java / Maven =====
 Novel-Bridge/target/
 *.class
 *.jar
 *.war
 
-# ===== IDE =====
+# ===== Node =====
+node_modules/
+
+# ===== IDE / Agent =====
 .idea/
 *.iml
 .vscode/
 **/.idea/
+.codex/
+.opencode/
 
 # ===== OS =====
 .DS_Store
 Thumbs.db
 *.swp
+*.swo
+
+# ===== Env & Config =====
+.env
+.env.local
+novel_bridge_config.json
+*.pid
 
 # ===== Project data =====
 data/books/*
@@ -21,26 +44,22 @@ data/chroma/*
 data/workspace/*
 !data/samples/
 !data/books/.gitkeep
+training/
+models/
 
 # ===== Logs =====
 *.log
+pipeline_logs/
 
-# ===== Deprecated (migrated from Reasonix to OpenCode) =====
+# ===== Deprecated =====
 .reasonix/
+docs/_archive/
 
-# ===== OpenCode IDE (只追踪 skills/，其余忽略) =====
-.opencode/node_modules/
-.opencode/.gitignore
-.opencode/package.json
-.opencode/package-lock.json
-
-# ===== Env =====
-.env
-book-test/
-
-# ===== Private context for user-guided Codex sessions =====
-docs/private/
-
-# ===== Remote sync temp files =====
-apps/
+# ===== Remote sync temp =====
+apps/*.tar.gz
 sync.tar.gz
+
+# ===== Local dev scripts =====
+启动停止脚本.md
+DEMO.md
+book-test/

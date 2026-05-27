@@ -1,85 +1,57 @@
-<#
-.SYNOPSIS
-  NovelBridge -- SSH tunnel to remote internal services
-.DESCRIPTION
-  Forward remote Linux internal ports to localhost via SSH.
-  Use this for local dev access to MySQL / Neo4j / llama-server.
+# Start NovelBridge SSH tunnel on Windows.
+#
+# Usage:
+#   .\scripts\remote\nb_tunnel_up.ps1
+#   .\scripts\remote\nb_tunnel_up.ps1 -User wk -RemoteHost 192.168.3.50
 
-  Then run Spring Boot with profile=dev:
-    $env:SPRING_PROFILES_ACTIVE="dev"
-    cd Novel-Bridge && mvn spring-boot:run
-
-  Mappings:
-    local:13306  -> remote:13306  (MySQL)
-    local:17474  -> remote:17474  (Neo4j HTTP)
-    local:17687  -> remote:17687  (Neo4j Bolt)
-    local:18080  -> remote:18080  (llama-server)
-#>
-
-$ErrorActionPreference = "Stop"
-
-$remoteHost = if ($env:NB_REMOTE_HOST) { $env:NB_REMOTE_HOST } else { "192.168.3.50" }
-$remotePort = if ($env:NB_REMOTE_PORT) { $env:NB_REMOTE_PORT } else { "22" }
-$remoteUser = if ($env:NB_REMOTE_USER) { $env:NB_REMOTE_USER } else { "wk" }
-$sshKey = $env:NB_SSH_KEY
-
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  NovelBridge -- SSH Tunnel (start)" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Target: $remoteUser@$remoteHost`:$remotePort"
-Write-Host ""
-
-# ---- Check existing tunnel ----
-$existingTunnel = Get-Process -Name "ssh" -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -match "$remoteHost.*13306" }
-
-if ($existingTunnel) {
-  Write-Host "SSH tunnel already running (PID: $($existingTunnel.Id))" -ForegroundColor Yellow
-  Write-Host "Restart: run nb_tunnel_down.ps1 first" -ForegroundColor Yellow
-  exit 0
-}
-
-# ---- Build SSH tunnel command ----
-$sshArgs = @(
-  "-p", $remotePort
-  "-o", "StrictHostKeyChecking=accept-new"
-  "-o", "ConnectTimeout=10"
-  "-o", "ExitOnForwardFailure=yes"
-  "-N"
-  "-L", "13306:127.0.0.1:13306"
-  "-L", "17474:127.0.0.1:17474"
-  "-L", "17687:127.0.0.1:17687"
-  "-L", "18080:127.0.0.1:18080"
-  "-L", "18081:127.0.0.1:18081"
+param(
+    [string]$User = "wk",
+    [string]$RemoteHost = "192.168.3.50",
+    [string]$PortFile = "$PSScriptRoot\..\..\deploy\remote\ports.env"
 )
-if ($sshKey) { $sshArgs += "-i", $sshKey }
-$sshArgs += "$remoteUser@$remoteHost"
 
-Write-Host "Establishing SSH tunnel (background)..." -ForegroundColor Yellow
-
-$process = Start-Process -FilePath "ssh" -ArgumentList $sshArgs -WindowStyle Hidden -PassThru
-
-Start-Sleep -Seconds 2
-
-if ($process.HasExited) {
-  if ($process.ExitCode -ne 0) {
-    Write-Host "ERROR: SSH tunnel failed (exit code: $($process.ExitCode))" -ForegroundColor Red
-    Write-Host "Check:" -ForegroundColor Red
-    Write-Host "  1. Remote SSH service is running"
-    Write-Host "  2. SSH key is set up (or use password)"
-    Write-Host "  3. Remote ports are listening"
-    exit 1
-  }
+$ports = @{}
+if (Test-Path -LiteralPath $PortFile) {
+    Get-Content -LiteralPath $PortFile | ForEach-Object {
+        if ($_ -match '^([A-Z0-9_]+)=(\d+)$') {
+            $ports[$matches[1]] = $matches[2]
+        }
+    }
 }
 
-Write-Host "SSH tunnel established" -ForegroundColor Green
-Write-Host ""
-Write-Host "Local mappings:"
-Write-Host "  localhost:13306  ->  remote MySQL"
-Write-Host "  localhost:17474  ->  remote Neo4j HTTP"
-Write-Host "  localhost:17687  ->  remote Neo4j Bolt"
-Write-Host "  localhost:18080  ->  remote llama-server"
-Write-Host "  localhost:18081  ->  remote rag-agent"
-Write-Host ""
-Write-Host "To stop: .\scripts\remote\nb_tunnel_down.ps1" -ForegroundColor Yellow
-Write-Host "To use: `$env:SPRING_PROFILES_ACTIVE=`"dev`"" -ForegroundColor Yellow
+$MYSQL_PORT = if ($ports.ContainsKey('MYSQL_PORT')) { $ports['MYSQL_PORT'] } else { '13306' }
+$NEO4J_HTTP_PORT = if ($ports.ContainsKey('NEO4J_HTTP_PORT')) { $ports['NEO4J_HTTP_PORT'] } else { '17474' }
+$NEO4J_BOLT_PORT = if ($ports.ContainsKey('NEO4J_BOLT_PORT')) { $ports['NEO4J_BOLT_PORT'] } else { '17687' }
+$QDRANT_PORT = if ($ports.ContainsKey('QDRANT_PORT')) { $ports['QDRANT_PORT'] } else { '16333' }
+$LLAMA_PORT = if ($ports.ContainsKey('LLAMA_PORT')) { $ports['LLAMA_PORT'] } else { '18080' }
+$EMBEDDING_PORT = if ($ports.ContainsKey('EMBEDDING_PORT')) { $ports['EMBEDDING_PORT'] } else { '18082' }
+$RAG_AGENT_PORT = if ($ports.ContainsKey('RAG_AGENT_PORT')) { $ports['RAG_AGENT_PORT'] } else { '18081' }
+
+$forwardings = @(
+    "-L", "127.0.0.1:${MYSQL_PORT}:127.0.0.1:${MYSQL_PORT}",
+    "-L", "127.0.0.1:${NEO4J_HTTP_PORT}:127.0.0.1:${NEO4J_HTTP_PORT}",
+    "-L", "127.0.0.1:${NEO4J_BOLT_PORT}:127.0.0.1:${NEO4J_BOLT_PORT}",
+    "-L", "127.0.0.1:${QDRANT_PORT}:127.0.0.1:${QDRANT_PORT}",
+    "-L", "127.0.0.1:${LLAMA_PORT}:127.0.0.1:${LLAMA_PORT}",
+    "-L", "127.0.0.1:${EMBEDDING_PORT}:127.0.0.1:${EMBEDDING_PORT}",
+    "-L", "127.0.0.1:${RAG_AGENT_PORT}:127.0.0.1:${RAG_AGENT_PORT}"
+)
+
+$sshArgs = @(
+    "-N",
+    "-o", "ExitOnForwardFailure=yes",
+    "-o", "ServerAliveInterval=60"
+) + $forwardings + @("${User}@${RemoteHost}")
+
+Write-Host "[INFO] Starting SSH tunnel to ${User}@${RemoteHost}"
+Write-Host "[INFO] Port mappings:"
+Write-Host "  localhost:${MYSQL_PORT}      -> remote:${MYSQL_PORT}     (MySQL)"
+Write-Host "  localhost:${NEO4J_HTTP_PORT}  -> remote:${NEO4J_HTTP_PORT} (Neo4j HTTP)"
+Write-Host "  localhost:${NEO4J_BOLT_PORT}  -> remote:${NEO4J_BOLT_PORT} (Neo4j Bolt)"
+Write-Host "  localhost:${QDRANT_PORT}      -> remote:${QDRANT_PORT}     (Qdrant)"
+Write-Host "  localhost:${LLAMA_PORT}       -> remote:${LLAMA_PORT}      (llama-server)"
+Write-Host "  localhost:${EMBEDDING_PORT}   -> remote:${EMBEDDING_PORT}  (embedding llama-server)"
+Write-Host "  localhost:${RAG_AGENT_PORT}   -> remote:${RAG_AGENT_PORT}  (rag-agent)"
+
+$proc = Start-Process -WindowStyle Hidden -FilePath "ssh" -ArgumentList $sshArgs -PassThru
+Write-Host "[INFO] SSH tunnel started in background. PID=$($proc.Id)"

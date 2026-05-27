@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelBridge 流水线</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:#f4f6f2;color:#18201c;padding:20px;font-size:14px}
+h1{font-size:20px;margin-bottom:16px;color:#174f42;display:flex;align-items:center;gap:8px}
+h1 small{font-size:12px;color:#607069;font-weight:400}
+.card{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+.card-t{font-size:16px;font-weight:600}.card-m{font-size:12px;color:#607069}
+.card-t input[type=checkbox]{margin-right:8px;width:16px;height:16px;cursor:pointer;vertical-align:text-bottom}
+.phase-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}.phase-item{text-align:center}
+.phase-btn{width:100%;padding:7px 4px;border-radius:6px;border:1px solid #d8ded7;background:#fff;cursor:pointer;font-size:12px;transition:.15s;white-space:nowrap}
+.phase-btn:hover{border-color:#1f6f5b}
+.phase-btn.pending{opacity:.55}
+.phase-btn.running{background:#fff8e1;border-color:#a15c16;color:#a15c16;font-weight:600}
+.phase-btn.success{background:#e8f5e9;border-color:#2e7d32;color:#2e7d32}
+.phase-btn.failed{background:#fbe9e7;border-color:#c62828;color:#c62828}
+.pbar{width:100%;height:4px;background:#e8e8e8;border-radius:2px;margin-top:6px;overflow:hidden}
+.pfill{height:100%;background:#1f6f5b;border-radius:2px;transition:width .5s}.pfill.failed{background:#c62828}
+.pmsg{font-size:11px;color:#607069;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.bar-btn{padding:5px 12px;border-radius:5px;border:1px solid #d8ded7;background:#fff;cursor:pointer;font-size:12px}
+.bar-btn:hover{border-color:#1f6f5b}
+.bar-btn.full{background:#1f6f5b;color:#fff;border-color:#1f6f5b;font-weight:600}
+.bar-btn.full:hover{background:#174f42}
+.bar-btn.batch{background:#174f42;color:#fff;border-color:#174f42}
+.bar-btn.batch:hover{background:#0f3a2f}
+.btn-cln{padding:4px 10px;border-radius:5px;border:1px solid #e0b3b3;background:#fff5f5;cursor:pointer;font-size:11px;color:#a33535}
+.btn-cln:hover{background:#fbe9e7}
+.btn-cln.danger{background:#c62828;color:#fff;border-color:#c62828}.btn-cln.danger:hover{background:#b71c1c}
+.loading{text-align:center;padding:60px;color:#607069;font-size:14px}
+.upload-area{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.upload-area h3{font-size:14px;margin-bottom:10px;color:#174f42}
+.upload-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.upload-form input[type=file]{font-size:13px}
+.upload-form input[type=text]{padding:6px 10px;border:1px solid #d8ded7;border-radius:5px;font-size:13px;width:180px}
+.upload-form button{padding:6px 16px;border-radius:5px;border:1px solid #1f6f5b;background:#1f6f5b;color:#fff;cursor:pointer;font-size:13px}
+.upload-form button:hover{background:#174f42}
+#upload-result{font-size:12px;margin-top:6px;color:#607069}
+.badge{display:inline-block;padding:1px 8px;border-radius:3px;font-size:11px;font-weight:500}
+.badge.BUILT{background:#e8f5e9;color:#2e7d32}
+.badge.IMPORTED{background:#fff8e1;color:#a15c16}
+.action-bar{display:flex;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #e0e0e0;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<h1>NovelBridge 流水线 <small>处理流程 · 后台任务</small></h1>
+
+<div class="upload-area">
+  <h3>上传新书</h3>
+  <div class="upload-form">
+    <input type="text" id="book-title" placeholder="书名" value="">
+    <input type="text" id="book-author" placeholder="作者（可选）" value="">
+    <input type="file" id="book-file" accept=".txt" multiple>
+    <button onclick="uploadBook()">上传</button>
+    <span id="upload-result"></span>
+  </div>
+</div>
+
+<div class="bar" style="margin-bottom:14px">
+  <button class="bar-btn" onclick="loadPipeline()">刷新</button>
+  <button class="bar-btn batch" onclick="batchRun()" id="batchBtn">批量运行选中</button>
+  <span style="font-size:12px;color:#607069" id="auto-status">自动刷新 5s</span>
+</div>
+
+<div id="pipeline-container"><div class="loading">加载中...</div></div>
+
+<script>
+var AUTO_REFRESH = true;
+var PHASE_NAMES = {'P1':'分章','P2':'梗概','P3':'提取','P4':'治理','P5':'叙事','P6':'索引','P7':'图谱','P8':'导出'};
+var PHASE_ORDER = ['P1','P2','P3','P4','P5','P6','P7','P8'];
+var BOOKS_DATA = [];
+
+async function loadPipeline(){
+  try{
+    var r=await fetch('/api/v2/pipeline/books');
+    var data=await r.json();
+    BOOKS_DATA = data.books || [];
+    renderPipeline();
+  }catch(e){
+    document.getElementById('pipeline-container').innerHTML='<div class="loading">加载失败: '+e.message+'</div>';
+  }
+}
+
+async function refreshStatus(){
+  try{
+    var r=await fetch('/api/v2/pipeline/books');
+    var data=await r.json();
+    var books=data.books||[];
+    for(var b=0;b<books.length;b++){
+      var book=books[b];
+      for(var p=0;p<PHASE_ORDER.length;p++){
+        var phase=PHASE_ORDER[p];
+        var info=book.phases[phase]||{latest_status:'PENDING',latest_progress:0};
+        var st=info.latest_status.toLowerCase();
+        var pct=info.latest_progress||0;
+        var btn=document.getElementById('btn-'+book.id+'-'+phase);
+        var msg=document.getElementById('msg-'+book.id+'-'+phase);
+        if(btn){
+          // Don't override RUNNING if user just clicked
+          if(btn.className.indexOf('running')===-1||st!=='running'){
+            btn.className='phase-btn '+st;
+          }
+        }
+        if(msg)msg.textContent=st;
+        // Update progress bar (always)
+        var pbar=btn?btn.parentElement.querySelector('.pfill'):null;
+        if(pbar)pbar.style.width=pct+'%';
+      }
+    }
+  }catch(e){}
+}
+
+function renderPipeline(){
+  var el=document.getElementById('pipeline-container');
+  var books = BOOKS_DATA;
+  if(!books||books.length===0){
+    el.innerHTML='<div class="loading">暂无书籍，请先上传</div>';return;
+  }
+  var h='';
+  for(var b=0;b<books.length;b++){
+    var book=books[b];
+    var badge='<span class="badge '+book.status+'">'+book.status+'</span>';
+    h+='<div class="card">';
+    h+='<div class="card-h"><div class="card-t">';
+    h+='<input type="checkbox" class="bk-cb" value="'+book.id+'" onchange="updateBatchBtn()">';
+    h+=esc(book.title)+'</div> <span class="card-m">'+badge+' '+book.chapter_count+'章 '+book.chunk_count+'块</span></div>';
+    // Phase buttons
+    h+='<div class="phase-grid">';
+    for(var p=0;p<PHASE_ORDER.length;p++){
+      var phase=PHASE_ORDER[p];
+      var info=book.phases[phase]||{latest_status:'PENDING',latest_progress:0,latest_task_id:''};
+      var st=info.latest_status.toLowerCase();
+      var pct=info.latest_progress||0;
+      h+='<div class="phase-item">';
+      h+='<div style="display:flex;gap:2px">';
+      h+='<button class="phase-btn '+st+'" onclick="triggerPhase('+book.id+',\''+phase+'\')" id="btn-'+book.id+'-'+phase+'" style="flex:1">'+PHASE_NAMES[phase]+'</button>';
+      h+='<button class="phase-btn '+st+'" onclick="cancelTask('+book.id+',\''+phase+'\')" id="cancel-'+book.id+'-'+phase+'" title="取消" style="flex:0;padding:7px 6px;font-size:11px;display:'+(st==='running'?'':'none')+'">✕</button>';
+      h+='</div>';
+      h+='<div class="pbar"><div class="pfill '+(st==='failed'?'failed':'')+'" style="width:'+pct+'%"></div></div>';
+      h+='<div class="pmsg" id="msg-'+book.id+'-'+phase+'">'+st+'</div>';
+      h+='</div>';
+    }
+    h+='</div><div class="action-bar">';
+    // Full pipeline button
+    h+='<button class="bar-btn full" onclick="fullPipeline('+book.id+')" id="full-'+book.id+'">全流程</button>';
+    // Cleanup buttons
+    h+='<button class="btn-cln" onclick="cleanupBook('+book.id+',\'data\')">清数据库</button>';
+    h+='<button class="btn-cln" onclick="cleanupBook('+book.id+',\'qdrant\')">清向量</button>';
+    h+='<button class="btn-cln" onclick="cleanupBook('+book.id+',\'neo4j\')">清图谱</button>';
+    h+='<button class="btn-cln danger" onclick="cleanupBook('+book.id+',\'all\')">清全部</button>';
+    h+='</div></div>';
+  }
+  el.innerHTML=h;
+  updateBatchBtn();
+}
+function updateBatchBtn(){
+  var cbs=document.querySelectorAll('.bk-cb:checked');
+  document.getElementById('batchBtn').textContent='批量运行 '+(cbs.length>0?'('+cbs.length+'本)':'');
+}
+
+async function fullPipeline(bookId){
+  var btn=document.getElementById('full-'+bookId);
+  btn.disabled=true;btn.textContent='运行中...';
+  for(var p=0;p<PHASE_ORDER.length;p++){
+    var phase=PHASE_ORDER[p];
+    var btn2=document.getElementById('btn-'+bookId+'-'+phase);
+    var msg=document.getElementById('msg-'+bookId+'-'+phase);
+    btn2.className='phase-btn running';msg.textContent='排队中...';
+    try{
+      var r=await fetch('/api/v2/books/'+bookId+'/phase/'+phase,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({use_model:false})});
+      var data=await r.json();
+      if(data.status==='started'){
+        msg.textContent='已排队';
+        await waitTask(data.task_id,bookId,phase);
+      }
+    }catch(e){msg.textContent='失败';btn2.className='phase-btn failed';break;}
+  }
+  btn.textContent='全流程';btn.disabled=false;
+  loadPipeline();
+}
+async function waitTask(taskId,bookId,phase){
+  var btn=document.getElementById('btn-'+bookId+'-'+phase);
+  var msg=document.getElementById('msg-'+bookId+'-'+phase);
+  for(var i=0;i<600;i++){
+    await new Promise(function(r){setTimeout(r,2000)});
+    try{
+      var rx=await fetch('/api/v2/tasks/'+taskId);
+      var t=await rx.json();
+      var st=t.status.toLowerCase();
+      btn.className='phase-btn '+st;
+      msg.textContent=t.message||st;
+      var pf=btn.parentElement.querySelector('.pfill');
+      if(pf)pf.style.width=t.progress+'%';
+      if(t.status==='SUCCESS'||t.status==='FAILED'){
+        if(t.error)msg.textContent='失败: '+t.error.slice(0,60);
+        return t.status;
+      }
+    }catch(e){msg.textContent='异常';return 'FAILED';}
+  }
+  return 'FAILED';
+}
+async function batchRun(){
+  var cbs=document.querySelectorAll('.bk-cb:checked');
+  if(cbs.length===0){alert('请先勾选要处理的书籍');return;}
+  if(!confirm('批量运行 '+cbs.length+' 本书的全流程？将按顺序依次处理每本书的 P1-P8。'))return;
+  document.getElementById('batchBtn').disabled=true;
+  for(var i=0;i<cbs.length;i++){
+    var bid=parseInt(cbs[i].value);
+    document.getElementById('batchBtn').textContent='正在处理第 '+(i+1)+'/'+cbs.length+' 本...';
+    await fullPipeline(bid);
+  }
+  document.getElementById('batchBtn').textContent='批量运行完成';document.getElementById('batchBtn').disabled=false;
+  setTimeout(function(){document.getElementById('batchBtn').textContent='批量运行选中'},3000);
+  loadPipeline();
+}
+
+async function triggerPhase(bookId,phase){
+  var btn=document.getElementById('btn-'+bookId+'-'+phase);
+  var msg=document.getElementById('msg-'+bookId+'-'+phase);
+  btn.className='phase-btn running';btn.disabled=true;msg.textContent='启动中...';
+  try{
+    var r=await fetch('/api/v2/books/'+bookId+'/phase/'+phase,{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({use_model:false})});
+    var data=await r.json();
+    if(data.status==='started'){msg.textContent='已排队';pollTask(data.task_id,bookId,phase);}
+    else{msg.textContent='启动失败';btn.className='phase-btn failed';}
+  }catch(e){msg.textContent=e.message;btn.className='phase-btn failed';}
+  btn.disabled=false;
+}
+
+function pollTask(taskId,bookId,phase){
+  var btn=document.getElementById('btn-'+bookId+'-'+phase);
+  var msg=document.getElementById('msg-'+bookId+'-'+phase);
+  var i=0,timer=setInterval(async function(){
+    i++;
+    try{
+      var r=await fetch('/api/v2/tasks/'+taskId);
+      var t=await r.json();
+      var st=t.status.toLowerCase();
+      btn.className='phase-btn '+st;
+      msg.textContent=t.message||st;
+      var pf=btn.parentElement.querySelector('.pfill');
+      if(pf)pf.style.width=t.progress+'%';
+      if(t.status==='SUCCESS'||t.status==='FAILED'||i>600){
+        clearInterval(timer);
+        if(t.error)msg.textContent='失败: '+t.error.slice(0,80);
+      }
+    }catch(e){clearInterval(timer);msg.textContent='轮询异常';}
+  },2000);
+}
+
+async function cleanupBook(bookId,target){
+  var label={'data':'数据库','qdrant':'向量索引','neo4j':'图谱','all':'全部数据'};
+  if(!confirm('确认清理书籍 '+bookId+' 的 '+label[target]+'？不可恢复！'))return;
+  if(target==='all'){
+    await fetch('/api/v2/books/'+bookId+'/cleanup',{method:'POST'});
+    await fetch('/api/v2/books/'+bookId+'/cleanup/qdrant',{method:'POST'});
+    await fetch('/api/v2/books/'+bookId+'/cleanup/neo4j',{method:'POST'});
+  } else {
+    await fetch('/api/v2/books/'+bookId+'/cleanup'+(target==='data'?'':'/'+target),{method:'POST'});
+  }
+  loadPipeline();
+}
+async function uploadBook(){
+  var fi=document.getElementById('book-file');
+  var title=document.getElementById('book-title').value||'未命名';
+  var author=document.getElementById('book-author').value||'';
+  var re=document.getElementById('upload-result');
+  if(!fi.files.length){re.textContent='请选择文件';return;}
+  var fd=new FormData();fd.append('title',title);fd.append('author',author);
+  for(var f=0;f<fi.files.length;f++)fd.append('files',fi.files[f]);
+  re.textContent='上传中...';
+  try{
+    var r=await fetch('/api/books/upload',{method:'POST',body:fd});
+    var d=await r.json();
+    re.textContent='上传成功: book_id='+d.book_id+' chapters='+d.chapters;
+    loadPipeline();
+  }catch(e){re.textContent='上传失败: '+e.message;}
+}
+async function cancelTask(bookId,phase){
+  var btn=document.getElementById('btn-'+bookId+'-'+phase);
+  var msg=document.getElementById('msg-'+bookId+'-'+phase);
+  var taskId=null;
+  for(var b=0;b<BOOKS_DATA.length;b++){
+    if(BOOKS_DATA[b].id===bookId){
+      var info=BOOKS_DATA[b].phases[phase];
+      if(info&&info.latest_task_id)taskId=info.latest_task_id;
+      break;
+    }
+  }
+  if(!taskId){msg.textContent='无运行中任务';return;}
+  try{
+    var r=await fetch('/api/v2/tasks/'+taskId+'/cancel',{method:'POST'});
+    var d=await r.json();
+    if(d.status==='cancelled'){
+      msg.textContent='已取消';
+      btn.className='phase-btn pending';
+    }
+  }catch(e){msg.textContent='取消失败';}
+}
+
+setInterval(function(){if(AUTO_REFRESH)refreshStatus();},5000);
+</script>
+</body>
+</html>

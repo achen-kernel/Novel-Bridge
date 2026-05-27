@@ -1,7 +1,0 @@
-# ===== Practice 环境（专用于练习副本） =====
-# 使用独立的 novel_bridge_practice 数据库，不影响主开发数据
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/novel_bridge_practice?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
-    username: root
-    password: 123456

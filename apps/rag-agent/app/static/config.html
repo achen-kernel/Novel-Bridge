@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f4f6f2">
+<title>服务配置 — NovelBridge</title>
+<style>
+/* ── Design Tokens ── */
+:root {
+  --bg: #f4f6f2;
+  --panel: #ffffff;
+  --ink: #18201c;
+  --muted: #607069;
+  --line: #d8ded7;
+  --accent: #1f6f5b;
+  --accent-strong: #174f42;
+  --accent-glow: rgba(31,111,91,0.12);
+  --warn: #a15c16;
+  --danger: #a33535;
+  --success: #1f6f5b;
+  --code: #111816;
+  --header-bg: #111816;
+  --card-shadow: 0 1px 3px rgba(24,32,28,0.06), 0 8px 24px rgba(24,32,28,0.04);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font-sans: "Aptos", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-serif: Georgia, "Times New Roman", "Noto Serif SC", serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--bg); scroll-behavior: smooth; }
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(31,111,91,0.07) 0%, transparent 60%),
+    linear-gradient(90deg, rgba(31,111,91,0.05) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(31,111,91,0.03) 1px, transparent 1px),
+    var(--bg);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
+  color: var(--ink);
+  font: 15px/1.6 var(--font-sans);
+}
+
+/* ── Shell ── */
+.shell { max-width: 1280px; margin: 0 auto; padding: 0 28px 48px; }
+
+/* ── Top Bar ── */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 28px 0 6px;
+  flex-wrap: wrap;
+}
+.brand h1 {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.brand h1 span { color: var(--accent); }
+.brand p { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.nav-links { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.nav-links a {
+  display: inline-flex; align-items: center;
+  min-height: 34px; padding: 6px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.8);
+  color: var(--ink); font-size: 13px; text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.nav-links a:hover { background: var(--panel); border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.nav-links a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ── Action Bar ── */
+.action-bar {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 18px;
+  margin-bottom: 22px;
+  box-shadow: var(--card-shadow);
+  position: sticky; top: 12px; z-index: 10;
+}
+.action-bar .status-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  background: var(--line); transition: background 0.3s;
+}
+.action-bar .status-dot.ok { background: var(--success); }
+.action-bar .status-dot.bad { background: var(--danger); }
+.action-bar .status-text { font-size: 12px; color: var(--muted); margin-left: 6px; margin-right: auto; }
+.action-bar .spacer { flex: 1; }
+
+button, .btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  min-height: 38px; padding: 8px 16px;
+  font: 600 13px var(--font-sans);
+  cursor: pointer; touch-action: manipulation;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-strong); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(31,111,91,0.25); }
+.btn-secondary { background: var(--panel); color: var(--ink); border-color: var(--line); }
+.btn-secondary:hover { background: #f8faf7; border-color: var(--accent); color: var(--accent); }
+.btn-warn { background: var(--warn); color: #fff; }
+.btn-warn:hover { background: #8a4d10; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(161,92,22,0.3); }
+.btn-sm { min-height: 30px; padding: 5px 11px; font-size: 12px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+.btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* ── Services Grid ── */
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 18px;
+}
+.service-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.service-card:hover { border-color: #bcc8be; box-shadow: 0 1px 3px rgba(24,32,28,0.08), 0 12px 30px rgba(24,32,28,0.06); }
+.service-card.testing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+.card-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+}
+.card-header h2 {
+  font-family: var(--font-serif);
+  font-size: 16px; font-weight: 700;
+  color: var(--ink); margin: 0;
+  text-transform: none; letter-spacing: 0;
+  display: flex; align-items: center; gap: 9px;
+}
+.card-header h2 .service-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; flex-shrink: 0;
+}
+
+/* Service card color accents */
+.icon-deepseek { background: #e8f4f8; color: #2563eb; }
+.icon-mysql { background: #fdf2e0; color: #e67e22; }
+.icon-qdrant { background: #fce4ec; color: #e91e63; }
+.icon-neo4j { background: #e8f0fe; color: #1a73e8; }
+.icon-llama { background: #f3e8ff; color: #7c3aed; }
+.icon-embedding { background: #e8f5e9; color: #2e7d32; }
+.icon-ssh { background: #fce8e6; color: #c5221f; }
+
+.card-body { padding: 18px 20px 20px; flex: 1; }
+
+/* ── Form fields ── */
+.field {
+  margin-bottom: 14px;
+}
+.field:last-child { margin-bottom: 0; }
+.field label {
+  display: flex; align-items: center; gap: 5px;
+  margin-bottom: 5px; color: var(--muted);
+  font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.field label .help-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--line); color: var(--muted); font-size: 9px; font-weight: 700;
+  cursor: help;
+}
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+input, select, textarea {
+  width: 100%;
+  border: 1px solid #cdd5ce;
+  border-radius: var(--radius-sm);
+  background: #fafcfa;
+  color: var(--ink);
+  padding: 9px 11px;
+  font: 14px var(--font-sans);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  background: #fff;
+}
+input.mono { font-family: var(--font-mono); font-size: 13px; }
+input::placeholder { color: #a8b3ab; }
+
+/* ── Toggle Switch ── */
+.toggle-group {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.toggle-group .toggle-label {
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.toggle-switch {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+}
+.toggle-switch input { display: none; }
+.toggle-slider {
+  width: 44px; height: 24px; border-radius: 12px;
+  background: #cdd5ce; position: relative;
+  transition: background 0.25s;
+}
+.toggle-slider::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.25s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::after { transform: translateX(20px); }
+.toggle-option {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  transition: color 0.2s;
+}
+.toggle-option.active { color: var(--ink); }
+
+/* ── Test Result ── */
+.test-area { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.test-result {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 10px; padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px; transition: all 0.25s;
+  max-height: 0; opacity: 0; overflow: hidden;
+  margin-top: 0; padding-top: 0; padding-bottom: 0;
+}
+.test-result.visible { max-height: 80px; opacity: 1; margin-top: 10px; padding: 9px 12px; }
+.test-result.success { background: #ecf7f2; border: 1px solid #b7d9c9; color: #174f42; }
+.test-result.fail { background: #fef2f2; border: 1px solid #f5c6c6; color: #7a1f1f; }
+.test-result .result-icon { font-size: 16px; flex-shrink: 0; }
+.test-result .latency { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── SSH Section ── */
+.ssh-section {
+  transition: all 0.35s ease;
+  opacity: 1; transform: translateY(0);
+}
+.ssh-section.hidden {
+  display: none;
+}
+
+/* ── Skeleton Loading ── */
+.skeleton-card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.skeleton-header { height: 56px; background: #f8faf7; border-bottom: 1px solid var(--line); }
+.skeleton-body { padding: 18px 20px; }
+.skeleton-line {
+  height: 14px; border-radius: 4px; margin-bottom: 10px;
+  background: linear-gradient(90deg, #eef1ec 25%, #e5eae3 50%, #eef1ec 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.skeleton-line.short { width: 60%; }
+.skeleton-line.medium { width: 80%; }
+.skeleton-line.long { width: 100%; }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+/* ── Toast Notifications ── */
+.toast-container {
+  position: fixed; top: 20px; right: 20px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: 400px; width: 100%;
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 14px 16px; border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(24,32,28,0.18);
+  font-size: 13px; line-height: 1.4;
+  pointer-events: auto; cursor: pointer;
+  animation: toast-in 0.3s ease;
+  transition: transform 0.3s, opacity 0.3s;
+}
+.toast.removing { transform: translateX(120%); opacity: 0; }
+.toast-success { background: #174f42; color: #d4ede2; border: 1px solid #1f6f5b; }
+.toast-error { background: #7a1f1f; color: #fde2e2; border: 1px solid #a33535; }
+.toast-info { background: #111816; color: #d7eadf; border: 1px solid #2a3d33; }
+.toast .toast-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast .toast-close { margin-left: auto; opacity: 0.6; font-size: 16px; line-height: 1; cursor: pointer; }
+.toast .toast-close:hover { opacity: 1; }
+@keyframes toast-in { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+/* ── Apply Dialog / Modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(17,24,22,0.5);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fade-in 0.2s ease;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--panel); border-radius: var(--radius);
+  padding: 28px 32px; max-width: 480px; width: 100%;
+  box-shadow: 0 20px 60px rgba(24,32,28,0.25);
+  animation: modal-in 0.25s ease;
+}
+@keyframes modal-in { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal h3 { font: 20px var(--font-serif); margin-bottom: 8px; }
+.modal p { color: var(--muted); font-size: 14px; margin-bottom: 18px; line-height: 1.5; }
+.modal .changed-list { list-style: none; margin-bottom: 20px; }
+.modal .changed-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.modal .changed-list li::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+}
+.modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ── Connection Status Strip ── */
+.status-strip {
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+  padding: 0; margin: 0;
+}
+.status-strip .si {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.status-strip .si .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line); transition: background 0.3s;
+}
+.status-strip .si .dot.ok { background: var(--success); }
+.status-strip .si .dot.bad { background: var(--danger); }
+.status-strip .sep { color: var(--line); }
+
+/* ── Responsive ── */
+@media (max-width: 920px) {
+  .services-grid { grid-template-columns: 1fr; }
+  .shell { padding: 0 16px 36px; }
+  .topbar { flex-direction: column; gap: 10px; padding-top: 18px; }
+  .action-bar { flex-wrap: wrap; gap: 8px; position: static; }
+  .action-bar .spacer { display: none; }
+  .action-bar .status-text { display: none; }
+  .toast-container { left: 12px; right: 12px; max-width: none; }
+}
+@media (max-width: 500px) {
+  .field-row { grid-template-columns: 1fr; }
+  .nav-links { gap: 4px; }
+  .nav-links a { font-size: 12px; padding: 5px 9px; min-height: 30px; }
+  .brand h1 { font-size: 22px; }
+  .card-body { padding: 14px 14px 16px; }
+  .card-header { padding: 12px 14px; }
+  .card-header h2 { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+.text-mono { font-family: var(--font-mono); }
+.text-muted { color: var(--muted); }
+.mt-1 { margin-top: 8px; }
+.mt-2 { margin-top: 16px; }
+.mb-1 { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <h1>服务<span>配置</span></h1>
+      <p>管理 NovelBridge 后端服务的连接参数与模式</p>
+    </div>
+    <nav class="nav-links">
+      <a href="/demo">演示台</a>
+      <a href="/pipeline">流水线</a>
+      <a href="/browse">书库</a>
+      <a href="/search">搜索</a>
+      <a href="/agent-runs">Trace</a>
+      <a href="/config" class="active">配置</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+
+  <!-- Action Bar -->
+  <div class="action-bar">
+    <div class="status-dot" id="overall-dot" title="服务状态概览"></div>
+    <span class="status-text" id="overall-text">等待加载…</span>
+    <span class="spacer"></span>
+    <div class="status-strip" id="status-strip"></div>
+    <span class="spacer"></span>
+    <button class="btn btn-secondary btn-sm" id="btn-refresh" onclick="loadConfig()" title="重新加载配置">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.5 15.5a9 9 0 1 0 2-13.5L1 10"/></svg>
+      刷新
+    </button>
+    <button class="btn btn-primary btn-sm" id="btn-save" onclick="saveConfig()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      保存配置
+    </button>
+    <button class="btn btn-warn btn-sm" id="btn-apply" onclick="applyConfig()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.5 7.5a9 9 0 1 0 2 6.5"/></svg>
+      应用并重启
+    </button>
+  </div>
+
+  <!-- Services Grid -->
+  <div id="services-grid" class="services-grid">
+    <!-- Skeleton loaders will be replaced here -->
+  </div>
+
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Modal Overlay (hidden by default) -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+/* ────────────────────────────────────────────────────────────
+   NovelBridge Configuration Page — Embedded JS
+   ──────────────────────────────────────────────────────────── */
+
+const API = "/api/config";
+
+/* ── Toast System ── */
+function toast(type, message, duration = 4000) {
+  const container = document.getElementById("toast-container");
+  const el = document.createElement("div");
+  el.className = `toast toast-${type}`;
+  const icons = { success: "\u2713", error: "\u2717", info: "\u2139" };
+  el.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span>${message}</span><span class="toast-close">&times;</span>`;
+  el.querySelector(".toast-close").addEventListener("click", () => removeToast(el));
+  container.appendChild(el);
+  const timer = setTimeout(() => removeToast(el), duration);
+  el._timer = timer;
+  el.addEventListener("mouseenter", () => clearTimeout(el._timer));
+  el.addEventListener("mouseleave", () => {
+    el._timer = setTimeout(() => removeToast(el), 1200);
+  });
+}
+function removeToast(el) {
+  clearTimeout(el._timer);
+  el.classList.add("removing");
+  setTimeout(() => el.remove(), 300);
+}
+
+/* ── Modal ── */
+function showModal(title, bodyHtml, actions = "") {
+  const overlay = document.getElementById("modal-overlay");
+  const content = document.getElementById("modal-content");
+  content.innerHTML = `<h3>${title}</h3>${bodyHtml}<div class="modal-actions">${actions}</div>`;
+  overlay.classList.remove("hidden");
+}
+function hideModal() {
+  document.getElementById("modal-overlay").classList.add("hidden");
+}
+document.getElementById("modal-overlay").addEventListener("click", function(e) {
+  if (e.target === this) hideModal();
+});
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") hideModal();
+});
+
+/* ── Service Config Definitions ── */
+const SERVICES = {
+  deepseek: {
+    title: "DeepSeek API",
+    icon: "D",
+    iconCls: "icon-deepseek",
+    desc: "大语言模型接口，用于复杂推理、审核与审查",
+    fields: [
+      { key: "api_key", label: "API Key", type: "password", placeholder: "sk-...", help: "DeepSeek API 密钥" },
+      { key: "base_url", label: "Base URL", type: "text", placeholder: "https://api.deepseek.com", help: "API 端点地址", mono: true },
+      { key: "model", label: "Model", type: "select", options: ["deepseek-v4-flash", "deepseek-v4-pro"], help: "模型名称" },
+    ],
+  },
+  mysql: {
+    title: "MySQL",
+    icon: "M",
+    iconCls: "icon-mysql",
+    desc: "结构化数据主库，存储书籍、章节、事实与运行记录",
+    mode: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "127.0.0.1", help: "MySQL 服务器地址", mono: true, cols: 2 },
+      { key: "port", label: "Port", type: "number", placeholder: "13306", help: "MySQL 端口", mono: true },
+      { key: "user", label: "User", type: "text", placeholder: "root", help: "数据库用户名", cols: 2 },
+      { key: "password", label: "Password", type: "password", placeholder: "", help: "数据库密码" },
+      { key: "database", label: "Database", type: "text", placeholder: "novel_bridge", help: "数据库名称" },
+    ],
+  },
+  qdrant: {
+    title: "Qdrant",
+    icon: "Q",
+    iconCls: "icon-qdrant",
+    desc: "向量数据库，存储文本块嵌入向量以实现语义检索",
+    mode: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "127.0.0.1", help: "Qdrant 服务器地址", mono: true, cols: 2 },
+      { key: "port", label: "Port", type: "number", placeholder: "16333", help: "Qdrant HTTP 端口", mono: true },
+    ],
+  },
+  neo4j: {
+    title: "Neo4j",
+    icon: "N",
+    iconCls: "icon-neo4j",
+    desc: "图数据库，存储实体关系与叙事图谱",
+    mode: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "127.0.0.1", help: "Neo4j 服务器地址", mono: true, cols: 2 },
+      { key: "http_port", label: "HTTP Port", type: "number", placeholder: "17474", help: "Neo4j HTTP 接口端口", mono: true },
+      { key: "bolt_port", label: "Bolt Port", type: "number", placeholder: "17687", help: "Neo4j Bolt 协议端口", mono: true },
+      { key: "user", label: "User", type: "text", placeholder: "neo4j", help: "Neo4j 用户名", cols: 2 },
+      { key: "password", label: "Password", type: "password", placeholder: "", help: "Neo4j 密码" },
+    ],
+  },
+  llama: {
+    title: "Local LLM",
+    icon: "L",
+    iconCls: "icon-llama",
+    desc: "本地大语言模型 (llama-server)，用于批量抽取与低开销候选生成",
+    mode: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "127.0.0.1", help: "llama-server 地址", mono: true, cols: 2 },
+      { key: "port", label: "Port", type: "number", placeholder: "18080", help: "llama-server 端口", mono: true },
+    ],
+  },
+  embedding: {
+    title: "Embedding Service",
+    icon: "E",
+    iconCls: "icon-embedding",
+    desc: "嵌入向量服务，将文本转换为语义向量用于检索",
+    mode: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "127.0.0.1", help: "Embedding 服务地址", mono: true, cols: 3 },
+      { key: "port", label: "Port", type: "number", placeholder: "18082", help: "Embedding 服务端口", mono: true },
+      { key: "api_path", label: "API Path", type: "text", placeholder: "/v1/embeddings", help: "API 路径", mono: true },
+    ],
+  },
+  ssh: {
+    title: "SSH 隧道",
+    icon: "S",
+    iconCls: "icon-ssh",
+    desc: "SSH 连接配置，用于通过跳板机访问远端服务",
+    mode: false,
+    conditional: true,
+    fields: [
+      { key: "host", label: "Host", type: "text", placeholder: "remote.example.com", help: "SSH 服务器地址", mono: true, cols: 2 },
+      { key: "port", label: "Port", type: "number", placeholder: "22", help: "SSH 端口", mono: true },
+      { key: "user", label: "User", type: "text", placeholder: "root", help: "SSH 用户名" },
+      { key: "auth_method", label: "Auth Method", type: "select", options: ["key", "password"], help: "认证方式" },
+      { key: "key_path", label: "Key File Path", type: "text", placeholder: "~/.ssh/id_rsa", help: "SSH 私钥路径（auth_method=key 时使用）" },
+      { key: "password", label: "Password", type: "password", placeholder: "", help: "SSH 密码（auth_method=password 时使用）" },
+    ],
+  },
+};
+
+const SERVICE_KEYS = Object.keys(SERVICES);
+
+/* ── State ── */
+let configData = {};
+let testResults = {}; // { service: { success, message, latency_ms } }
+
+/* ── Build UI ── */
+function renderSkeletons() {
+  const grid = document.getElementById("services-grid");
+  let html = "";
+  for (const key of SERVICE_KEYS) {
+    if (SERVICES[key].conditional) continue; // SSH is rendered separately
+    html += `<div class="skeleton-card"><div class="skeleton-header"></div><div class="skeleton-body"><div class="skeleton-line medium"></div><div class="skeleton-line long"></div><div class="skeleton-line long"></div><div class="skeleton-line short"></div></div></div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function renderServices() {
+  const grid = document.getElementById("services-grid");
+  let html = "";
+
+  for (const key of SERVICE_KEYS) {
+    if (SERVICES[key].conditional) continue; // SSH handled separately
+    html += buildCard(key);
+  }
+
+  // SSH section
+  const sshVisible = shouldShowSSH();
+  html += `<div class="service-card ssh-section ${sshVisible ? "" : "hidden"}" id="ssh-card">${buildCard("ssh")}</div>`;
+
+  grid.innerHTML = html;
+
+  // Bind event listeners
+  for (const key of SERVICE_KEYS) {
+    if (SERVICES[key].conditional && !shouldShowSSH()) continue;
+    const btn = document.getElementById(`test-${key}`);
+    if (btn) btn.addEventListener("click", () => testService(key));
+    // Auth method change for SSH
+    if (key === "ssh") {
+      const authSelect = document.getElementById("field-ssh-auth_method");
+      if (authSelect) {
+        authSelect.addEventListener("change", () => updateSSHFields());
+        updateSSHFields();
+      }
+    }
+    // Mode toggle listeners
+    if (SERVICES[key].mode) {
+      const toggle = document.getElementById(`mode-${key}`);
+      if (toggle) {
+        toggle.addEventListener("change", function() { updateModeUI(key); });
+      }
+    }
+  }
+
+  // Global SSH mode listener
+  document.querySelectorAll("[data-ssh-trigger]").forEach(el => {
+    el.removeEventListener("change", onSSHTrigger);
+    el.addEventListener("change", onSSHTrigger);
+  });
+
+  updateStatusStrip();
+}
+
+function buildCard(key) {
+  const svc = SERVICES[key];
+  const cfg = configData[key] || {};
+  const testRes = testResults[key];
+  let testHTML = "";
+  if (testRes) {
+    const cls = testRes.success ? "success" : "fail";
+    const icon = testRes.success ? "\u2713" : "\u2717";
+    testHTML = `<div class="test-result ${cls} visible"><span class="result-icon">${icon}</span>${escHtml(testRes.message)}<span class="latency">${testRes.latency_ms > 0 ? testRes.latency_ms.toFixed(1) + " ms" : ""}</span></div>`;
+  }
+
+  let toggleHTML = "";
+  if (svc.mode) {
+    const mode = cfg.mode || "local";
+    toggleHTML = `
+      <div class="toggle-group">
+        <span class="toggle-label">模式</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="mode-${key}" data-ssh-trigger="${key}" ${mode === "ssh" ? "checked" : ""}>
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-option ${mode === "local" ? "active" : ""}" id="mode-label-local-${key}">本地</span>
+        <span class="toggle-option ${mode === "ssh" ? "active" : ""}" id="mode-label-ssh-${key}">SSH</span>
+      </div>`;
+  }
+
+  // Build fields with row grouping for cols > 1
+  let fieldsArr = [...svc.fields];
+  let i = 0;
+  let htmlFrag = "";
+  while (i < fieldsArr.length) {
+    const f = fieldsArr[i];
+    const val = cfg[f.key] !== undefined ? cfg[f.key] : "";
+    // Check if next field is also marked for same row (cols=2 pattern)
+    if (f.cols && f.cols > 1 && i + 1 < fieldsArr.length && !fieldsArr[i + 1].cols) {
+      const f2 = fieldsArr[i + 1];
+      const val2 = cfg[f2.key] !== undefined ? cfg[f2.key] : "";
+      htmlFrag += `<div class="field-row">${buildField(key, f, val)}${buildField(key, f2, val2, true)}</div>`;
+      i += 2;
+    } else if (f.cols && f.cols === 3 && i + 2 < fieldsArr.length) {
+      const f2 = fieldsArr[i + 1];
+      const f3 = fieldsArr[i + 2];
+      const val2 = cfg[f2.key] !== undefined ? cfg[f2.key] : "";
+      const val3 = cfg[f3.key] !== undefined ? cfg[f3.key] : "";
+      htmlFrag += `<div class="field-row" style="grid-template-columns:1fr 1fr 1fr">${buildField(key, f, val)}${buildField(key, f2, val2, true)}${buildField(key, f3, val3, true)}</div>`;
+      i += 3;
+    } else {
+      htmlFrag += buildField(key, f, val);
+      i++;
+    }
+  }
+
+  const cardCls = testRes && testRes.success ? "service-card tested-ok" : (testRes && !testRes.success ? "service-card tested-bad" : "service-card");
+
+  return `
+    <div class="${cardCls}" id="card-${key}">
+      <div class="card-header">
+        <h2><span class="service-icon ${svc.iconCls}">${svc.icon}</span>${svc.title}</h2>
+        ${toggleHTML}
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-1" style="font-size:12px;margin-bottom:14px">${svc.desc}</p>
+        ${htmlFrag}
+        <div class="test-area">
+          <button class="btn btn-secondary btn-sm" id="test-${key}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            测试连接
+          </button>
+          <div class="test-result" id="result-${key}">${testHTML}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function buildField(svcKey, field, value, noLabel = false) {
+  const inputCls = field.mono ? "mono" : "";
+  const helpAttr = field.help ? ` title="${escAttr(field.help)}"` : "";
+
+  let inputHTML;
+  if (field.type === "select") {
+    const opts = (field.options || []).map(o => `<option value="${escAttr(o)}" ${value === o ? "selected" : ""}>${escHtml(o)}</option>`).join("");
+    inputHTML = `<select id="field-${svcKey}-${field.key}" class="${inputCls}">${opts}</select>`;
+  } else if (field.type === "password") {
+    // Show placeholder hint when value is masked (already set)
+    const isMasked = value && value.includes("*");
+    const ph = isMasked ? "•••••••• (已设置)" : (field.placeholder || "");
+    inputHTML = `<input type="password" id="field-${svcKey}-${field.key}" class="${inputCls}" value="" placeholder="${escAttr(ph)}" autocomplete="off">`;
+  } else {
+    inputHTML = `<input type="${field.type}" id="field-${svcKey}-${field.key}" class="${inputCls}" value="${escAttr(value)}" placeholder="${escAttr(field.placeholder || "")}" autocomplete="off">`;
+  }
+
+  if (noLabel) {
+    return `<div class="field">${inputHTML}${field.help ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${escHtml(field.help)}</div>` : ""}</div>`;
+  }
+
+  return `<div class="field">
+    <label${helpAttr}>${field.label}${field.help ? `<span class="help-icon">?</span>` : ""}</label>
+    ${inputHTML}
+  </div>`;
+}
+
+/* ── SSH visibility ── */
+function shouldShowSSH() {
+  for (const key of SERVICE_KEYS) {
+    if (!SERVICES[key].mode) continue;
+    const cfg = configData[key] || {};
+    if (cfg.mode === "ssh") return true;
+  }
+  return false;
+}
+
+function onSSHTrigger() {
+  const sshCard = document.getElementById("ssh-card");
+  const visible = shouldShowSSH();
+  if (sshCard) {
+    sshCard.classList.toggle("hidden", !visible);
+  } else if (visible) {
+    // Re-render to add SSH
+    renderServices();
+  }
+  updateStatusStrip();
+}
+
+function updateSSHFields() {
+  const method = document.getElementById("field-ssh-auth_method")?.value;
+  const keyPathField = document.getElementById("field-ssh-key_path")?.closest(".field");
+  const passField = document.getElementById("field-ssh-password")?.closest(".field");
+  if (keyPathField) keyPathField.style.display = method === "key" ? "" : "none";
+  if (passField) passField.style.display = method === "password" ? "" : "none";
+}
+
+function updateModeUI(key) {
+  const toggle = document.getElementById(`mode-${key}`);
+  const isSSH = toggle?.checked;
+  const localLabel = document.getElementById(`mode-label-local-${key}`);
+  const sshLabel = document.getElementById(`mode-label-ssh-${key}`);
+  if (localLabel) localLabel.classList.toggle("active", !isSSH);
+  if (sshLabel) sshLabel.classList.toggle("active", isSSH);
+  onSSHTrigger();
+}
+
+/* ── Status Strip ── */
+function updateStatusStrip() {
+  const strip = document.getElementById("status-strip");
+  const overallDot = document.getElementById("overall-dot");
+  const overallText = document.getElementById("overall-text");
+
+  let html = "";
+  let allOk = true;
+  let testedCount = 0;
+  let okCount = 0;
+
+  for (const key of SERVICE_KEYS) {
+    if (SERVICES[key].conditional && !shouldShowSSH()) continue;
+    const res = testResults[key];
+    if (res) {
+      testedCount++;
+      const cls = res.success ? "ok" : "bad";
+      if (res.success) okCount++;
+      else allOk = false;
+      html += `<span class="si"><span class="dot ${cls}"></span>${SERVICES[key].title}</span>`;
+    }
+  }
+
+  if (html) html += `<span class="sep">|</span>`;
+  html += testedCount > 0 ? `<span style="font-size:11px;color:var(--muted)">${okCount}/${testedCount} 正常</span>` : "";
+
+  strip.innerHTML = html;
+
+  if (testedCount === 0) {
+    overallDot.className = "status-dot";
+    overallText.textContent = "等待测试…";
+  } else if (allOk && testedCount >= Object.keys(SERVICES).filter(k => !SERVICES[k].conditional || shouldShowSSH()).length - 1) {
+    overallDot.className = "status-dot ok";
+    overallText.textContent = "所有服务正常";
+  } else if (okCount > 0) {
+    overallDot.className = "status-dot bad";
+    overallText.textContent = `${okCount}/${testedCount} 服务正常`;
+  } else {
+    overallDot.className = "status-dot bad";
+    overallText.textContent = "服务异常";
+  }
+}
+
+/* ── Collect form data ── */
+function collectConfig() {
+  const data = {};
+  for (const key of SERVICE_KEYS) {
+    if (SERVICES[key].conditional && !shouldShowSSH() && key === "ssh") continue;
+    const svc = {};
+    for (const f of SERVICES[key].fields) {
+      const el = document.getElementById(`field-${key}-${f.key}`);
+      if (el) svc[f.key] = el.value;
+    }
+    if (SERVICES[key].mode) {
+      const toggle = document.getElementById(`mode-${key}`);
+      svc.mode = toggle?.checked ? "ssh" : "local";
+    }
+    data[key] = svc;
+  }
+  return data;
+}
+
+/* ── Populate form ── */
+function populateForm(data) {
+  configData = data;
+  renderServices();
+}
+
+/* ── API Calls ── */
+async function loadConfig() {
+  // Show skeletons
+  renderSkeletons();
+  configData = {};
+  testResults = {};
+  document.getElementById("overall-text").textContent = "加载中…";
+  document.getElementById("overall-dot").className = "status-dot";
+  document.getElementById("status-strip").innerHTML = "";
+
+  try {
+    const res = await fetch(API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const data = await res.json();
+    populateForm(data);
+    toast("success", "配置已加载");
+  } catch (err) {
+    toast("error", `加载配置失败: ${err.message}`);
+    populateForm({}); // Render with empty data
+  }
+}
+
+async function saveConfig() {
+  const btn = document.getElementById("btn-save");
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> 保存中…';
+  btn.disabled = true;
+
+  try {
+    const data = collectConfig();
+    const res = await fetch(API, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const result = await res.json();
+    if (result.status === "ok") {
+      toast("success", result.message || "配置已保存");
+      // Reload to get masked values back
+      await loadConfig();
+    } else {
+      toast("error", result.message || "保存失败");
+    }
+  } catch (err) {
+    toast("error", `保存失败: ${err.message}`);
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+  }
+}
+
+async function testService(serviceKey) {
+  const card = document.getElementById(`card-${serviceKey}`);
+  const resultEl = document.getElementById(`result-${serviceKey}`);
+  const testBtn = document.getElementById(`test-${serviceKey}`);
+  const origText = testBtn.innerHTML;
+
+  // Show spinner
+  testBtn.innerHTML = '<span class="spinner"></span> 测试中…';
+  testBtn.disabled = true;
+  card?.classList.add("testing");
+  if (resultEl) {
+    resultEl.className = "test-result";
+    resultEl.innerHTML = "";
+  }
+
+  try {
+    const res = await fetch(`${API}/test/${serviceKey}`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    testResults[serviceKey] = data;
+
+    // Update result display
+    const cls = data.success ? "success" : "fail";
+    const icon = data.success ? "\u2713" : "\u2717";
+    const lat = data.latency_ms > 0 ? data.latency_ms.toFixed(1) : "0.0";
+    if (resultEl) {
+      resultEl.className = `test-result ${cls} visible`;
+      resultEl.innerHTML = `<span class="result-icon">${icon}</span>${escHtml(data.message)}<span class="latency">${lat} ms</span>`;
+    }
+
+    // Update card class
+    card?.classList.remove("testing");
+    card?.classList.remove("tested-ok", "tested-bad");
+    card?.classList.add(data.success ? "tested-ok" : "tested-bad");
+
+    updateStatusStrip();
+
+    if (data.success) {
+      toast("success", `${SERVICES[serviceKey].title} 连接正常 (${lat} ms)`);
+    } else {
+      toast("error", `${SERVICES[serviceKey].title} 连接失败: ${data.message}`);
+    }
+  } catch (err) {
+    testResults[serviceKey] = { service: serviceKey, success: false, message: err.message, latency_ms: 0 };
+    if (resultEl) {
+      resultEl.className = "test-result fail visible";
+      resultEl.innerHTML = `<span class="result-icon">\u2717</span>${escHtml(err.message)}`;
+    }
+    card?.classList.remove("testing");
+    card?.classList.add("tested-bad");
+    updateStatusStrip();
+    toast("error", `测试 ${SERVICES[serviceKey].title} 失败: ${err.message}`);
+  } finally {
+    testBtn.innerHTML = origText;
+    testBtn.disabled = false;
+  }
+}
+
+async function applyConfig() {
+  const btn = document.getElementById("btn-apply");
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> 检测中…';
+  btn.disabled = true;
+
+  try {
+    // First save
+    const data = collectConfig();
+    await fetch(API, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    // Then apply
+    const res = await fetch(`${API}/apply`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const result = await res.json();
+
+    if (result.status === "restart_required") {
+      const changedList = (result.changed_services || []).map(s =>
+        `<li>${SERVICES[s]?.title || s}</li>`
+      ).join("");
+      showModal(
+        "需要重启服务",
+        `<p>以下服务配置已变更，请重启 rag-agent 以使其生效：</p><ul class="changed-list">${changedList}</ul><p style="color:var(--warn);font-size:13px">提示：刷新浏览器并重新测试连接，确认服务是否可访问。</p>`,
+        `<button class="btn btn-primary btn-sm" onclick="hideModal();window.location.reload()">我知道了</button>`
+      );
+      toast("info", `需要重启以应用 ${result.changed_services.length} 项变更`);
+    } else if (result.status === "applied") {
+      toast("success", result.message || "配置已应用");
+    } else {
+      toast("error", result.message || "应用失败");
+    }
+  } catch (err) {
+    toast("error", `应用失败: ${err.message}`);
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+    // Reload to sync
+    await loadConfig();
+  }
+}
+
+/* ── Utility ── */
+function escHtml(str) {
+  if (!str) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function escAttr(str) {
+  if (!str) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* ── Keyboard Shortcuts ── */
+document.addEventListener("keydown", function(e) {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === "s") { e.preventDefault(); saveConfig(); }
+    if (e.key === "r") { e.preventDefault(); loadConfig(); }
+  }
+});
+
+/* ── Init ── */
+renderSkeletons();
+loadConfig();
+</script>
+</body>
+</html>

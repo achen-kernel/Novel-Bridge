@@ -1,20 +1,43 @@
 package com.achen.novelbridge.pojo.entity;
 
-import com.achen.novelbridge.common.base.BaseEntity;
-import com.achen.novelbridge.common.enums.SourceType;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 
-@Getter
-@Setter
-public class NovelCitation extends BaseEntity {
+import java.time.LocalDateTime;
+
+/**
+ * Citation linking a chat message to source evidence.
+ *
+ * @NB-DATA-WRITE
+ * @NB-EVIDENCE
+ */
+@Data
+public class NovelCitation {
+
+    private Long id;
 
     private Long messageId;
-    private SourceType sourceType;
+
+    private Long bookId;
+
+    private String sourceType;
+
     private Long sourceId;
+
     private Long chapterId;
+
     private Long chunkId;
-    private Long factId;
-    private Double relevanceScore;
+
+    private Long chapterFactId;
+
     private String excerpt;
+
+    private Integer startOffset;
+
+    private Integer endOffset;
+
+    private Double relevanceScore;
+
+    private String evidenceLevel;
+
+    private LocalDateTime createdAt;
 }

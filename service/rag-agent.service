@@ -1,0 +1,15 @@
+[Unit]
+Description=NovelBridge RAG Agent
+After=network.target docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wk/novelbridge/apps/rag-agent
+EnvironmentFile=/home/wk/novelbridge/deploy/remote/.env
+EnvironmentFile=/home/wk/novelbridge/deploy/remote/ports.env
+ExecStart=/home/wk/miniconda3/envs/llamacpp/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 18081 --workers 1 --log-level info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

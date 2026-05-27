@@ -1,23 +1,77 @@
 package com.achen.novelbridge.common.properties;
 
-import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
- * Maps novel-bridge.rag-agent.* configuration from application.yml.
- * <p>
- * Demo 5A: base-url for remote rag-agent endpoint.
- * Demo 5B+: will be extended with timeout, retry, model config.
+ * Configuration properties for the Python rag-agent service connection.
  */
-@Data
-@Component
-@ConfigurationProperties(prefix = "novel-bridge.rag-agent")
+@ConfigurationProperties(prefix = "novelbridge.rag-agent")
 public class RagAgentProperties {
 
-    /** Base URL of the remote rag-agent service, e.g. http://192.168.3.50:18081 */
-    private String baseUrl;
+    /**
+     * Base URL of the Python rag-agent service.
+     */
+    private String baseUrl = "http://localhost:18081";
 
-    /** Request timeout in milliseconds (default 30s). */
-    private long timeoutMs = 30_000;
+    /**
+     * Connection/read timeout in milliseconds.
+     */
+    private int timeout = 5000;
+
+    /**
+     * URL template for triggering book processing on the rag-agent.
+     * {bookId} is replaced with the actual book ID.
+     */
+    private String bookProcessUrl = "http://localhost:18081/api/books/{bookId}/process";
+
+    /**
+     * URL template for triggering fact extraction on the rag-agent.
+     * {bookId} is replaced with the actual book ID.
+     */
+    private String factExtractUrl = "http://localhost:18081/api/books/{bookId}/extract";
+
+    /**
+     * URL for the QA ask endpoint on the rag-agent.
+     */
+    private String qaUrl = "http://localhost:18081/api/qa/ask";
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
+
+    public int getTimeout() {
+        return timeout;
+    }
+
+    public void setTimeout(int timeout) {
+        this.timeout = timeout;
+    }
+
+    public String getBookProcessUrl() {
+        return bookProcessUrl;
+    }
+
+    public void setBookProcessUrl(String bookProcessUrl) {
+        this.bookProcessUrl = bookProcessUrl;
+    }
+
+    public String getFactExtractUrl() {
+        return factExtractUrl;
+    }
+
+    public void setFactExtractUrl(String factExtractUrl) {
+        this.factExtractUrl = factExtractUrl;
+    }
+
+    public String getQaUrl() {
+        return qaUrl;
+    }
+
+    public void setQaUrl(String qaUrl) {
+        this.qaUrl = qaUrl;
+    }
 }

@@ -1,43 +1,32 @@
 package com.achen.novelbridge.server.mapper;
 
 import com.achen.novelbridge.pojo.entity.NovelCitation;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
-import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
+/**
+ * MyBatis Mapper for novel_citation table operations.
+ */
 @Mapper
 public interface CitationMapper {
 
-    @Insert("INSERT INTO novel_citation (message_id, source_type, source_id, chapter_id, chunk_id, fact_id, "
-            + "relevance_score, excerpt, created_by, updated_by) "
-            + "VALUES (#{messageId}, #{sourceType}, #{sourceId}, #{chapterId}, #{chunkId}, #{factId}, "
-            + "#{relevanceScore}, #{excerpt}, #{createdBy}, #{updatedBy})")
+    @Insert("INSERT INTO novel_citation (message_id, book_id, source_type, source_id, chapter_id, chunk_id, chapter_fact_id, excerpt, start_offset, end_offset, relevance_score, evidence_level) "
+            + "VALUES (#{messageId}, #{bookId}, #{sourceType}, #{sourceId}, #{chapterId}, #{chunkId}, #{chapterFactId}, #{excerpt}, #{startOffset}, #{endOffset}, #{relevanceScore}, #{evidenceLevel})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
-    int insert(NovelCitation citation);
-
-    @Insert({
-        "<script>",
-        "INSERT INTO novel_citation (message_id, source_type, source_id, chapter_id, chunk_id, fact_id, ",
-        "relevance_score, excerpt, created_by, updated_by) VALUES ",
-        "<foreach collection='list' item='c' separator=','>",
-        "(#{c.messageId}, #{c.sourceType}, #{c.sourceId}, #{c.chapterId}, #{c.chunkId}, #{c.factId}, ",
-        "#{c.relevanceScore}, #{c.excerpt}, #{c.createdBy}, #{c.updatedBy})",
-        "</foreach>",
-        "</script>"
-    })
-    @Options(useGeneratedKeys = true, keyProperty = "id")
-    int insertBatch(@Param("list") List<NovelCitation> citations);
+    int insertCitation(NovelCitation citation);
 
     @Select("SELECT * FROM novel_citation WHERE message_id = #{messageId}")
-    List<NovelCitation> findByMessageId(@Param("messageId") Long messageId);
+    List<NovelCitation> findByMessageId(Long messageId);
 
-    @Delete("DELETE FROM novel_citation WHERE message_id IN "
-            + "(SELECT id FROM novel_chat_message WHERE session_id IN "
-            + "(SELECT id FROM novel_chat_session WHERE book_id = #{bookId}))")
-    int deleteByBookId(@Param("bookId") Long bookId);
+    @Insert("<script>"
+            + "INSERT INTO novel_citation (message_id, book_id, source_type, source_id, chapter_id, chunk_id, chapter_fact_id, excerpt, start_offset, end_offset, relevance_score, evidence_level) VALUES "
+            + "<foreach collection='list' item='c' separator=','>"
+            + "(#{c.messageId}, #{c.bookId}, #{c.sourceType}, #{c.sourceId}, #{c.chapterId}, #{c.chunkId}, #{c.chapterFactId}, #{c.excerpt}, #{c.startOffset}, #{c.endOffset}, #{c.relevanceScore}, #{c.evidenceLevel})"
+            + "</foreach>"
+            + "</script>")
+    int insertBatch(List<NovelCitation> citations);
 }

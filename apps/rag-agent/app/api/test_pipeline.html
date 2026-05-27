@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>Pipeline API Test</h2>
+<div id="result">Testing...</div>
+<script>
+fetch('/api/v2/pipeline/books')
+  .then(r => r.json())
+  .then(data => {
+    var html = '<b>OK:</b> ' + data.books.length + ' books<br><ul>';
+    data.books.forEach(function(b) {
+      html += '<li>' + b.id + ' ' + b.title + ' (chaps=' + b.chapter_count + ' chunks=' + b.chunk_count + ')</li>';
+    });
+    html += '</ul>';
+    document.getElementById('result').innerHTML = html;
+  })
+  .catch(e => {
+    document.getElementById('result').innerHTML = '<b>ERROR:</b> ' + e.message;
+  });
+</script>
+</body>
+</html>

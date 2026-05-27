@@ -1,17 +1,26 @@
 package com.achen.novelbridge;
 
-import org.mybatis.spring.annotation.MapperScan;
+import com.achen.novelbridge.common.properties.RagAgentProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.scheduling.annotation.EnableAsync;
 
+/**
+ * NovelBridge — API-first novel reading and authoring analysis agent.
+ * <p>
+ * Stage 1: Foundation Skeleton.
+ * </p>
+ *
+ * @NB-ENTRYPOINT
+ * @NB-ROADMAP
+ */
 @SpringBootApplication
-@ConfigurationPropertiesScan
-@MapperScan("com.achen.novelbridge.server.mapper")
+@EnableAsync
+@EnableConfigurationProperties(RagAgentProperties.class)
 public class NovelBridgeApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(NovelBridgeApplication.class, args);
     }
-
 }

@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4 -e "SELECT canonical_name, LEFT(description, 120) as desc_short FROM novel_entity_profile WHERE book_id = 6 AND description != '' ORDER BY mention_count DESC LIMIT 10;"

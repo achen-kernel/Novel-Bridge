@@ -1,5 +1,268 @@
 # retro-log.md
 
+## 2026-05-25 - Stage 6C smart planning and model answer quality
+
+### Pitfall: mode selection is a product problem, not a user responsibility
+
+- **Symptom**: `answer` / `analyze` / `trace` / `enrich` are technically meaningful, but a normal user often cannot choose the right one. Their request is usually vague: "看看宋江怎么起来的", "分析一下关系", "这个线索怎么变化".
+- **Root cause**: the demo exposed backend execution modes directly as a primary user decision. This is useful for debugging but not ideal for a reader-facing product.
+- **Correction**:
+  - `/demo` now includes "smart selection";
+  - it infers task intent from the question and selected book;
+  - it rewrites vague questions into retrieval-friendly prompts;
+  - it converts the plan to an existing mode before calling `/api/reader-agent/run`, so the API contract stays unchanged.
+- **Lesson**: production UX should be `user asks naturally -> system plans mode/targets -> ReaderAgent executes`. Explicit mode selection should remain as advanced/debug control.
+
+### Pitfall: local 9B answer quality needs a polish/audit layer
+
+- **Observation case**: for "《山海经》如何组织山川地理与神话？", DeepSeek produced a cleaner final answer, while local 9B produced a usable but verbose draft with punctuation defects and broader unsupported claims.
+- **What 9B did well**:
+  - captured the main "山经/海经 + 地理承载神话" structure;
+  - produced strong phrases such as "以山系为骨架，以神话传说为血肉".
+- **What 9B did poorly**:
+  - repeated ideas;
+  - had punctuation artifacts;
+  - drifted into broad claims such as "巫书" and "巫师口耳相传" without enough visible evidence.
+- **Lesson**: same retrieval context does not imply same final-answer quality. Evaluate retrieval quality and answer-writing quality separately.
+- **Follow-up**: add a ReaderAgent answer polish/audit stage that cleans punctuation, compresses repetition, removes internal ids/tags, and flags unsupported broad claims. DeepSeek can be used as final rewrite/audit when configured; local 9B remains useful for low-cost draft and offline demo.
+
+See also: `docs/25-stage-6c-demo-qa-and-planning-lessons.md`.
+
+## 2026-05-21 — 规则系统 + 训练数据飞轮 + 全流程调试
+
+### 背景
+完成了规则注册表系统（全局 + 书专属规则）、训练数据采集管线、动态类型词表系统，并在远端 5 本古籍上跑全流程 Pipeline。
+
+### 本次交付
+1. **规则注册表** (`app/rules/`): 实体/关系/事件/抽取/分块/合并 6 维度规则，`RuleRegistry` 全局+书规则合并
+2. **动态类型词表**: 78 种关系类型 + 90 种事件类型（中文可控词表），归一化映射，DeepSeek 审计
+3. **训练数据飞轮**: `TrainingSampleRunner` 采样 + DeepSeek 审核 + 入库 + JSONL 导出
+4. **审查修复**: Health 端点、llama-server 连接复用、Qdrant 惰性连接、DeepSeek timeout、nb_up.sh ctx-size、prior_hint 自动生规则
+
+### Pipeline 执行经验
+
+**提取耗时（use_model=True 调 llama-server）:**
+- 每 chunk 约 18-60 秒（取决于 chunk 长度和模型负载）
+- Book 8 搜神记 35 章: ~60 分钟
+- Book 10 水浒传 126 章: ~90 分钟
+- 5 本书全量: 6-8 小时
+
+**Phases 4-8 处理时间:**
+- Entity Governance: 每本 < 10 秒
+- Narrative Build: 每本 < 10 秒
+- Index Qdrant: 每本 < 10 秒
+- Graph Project: 每本 < 30 秒
+- Training Samples: 每本 < 5 秒
+
+### 踩坑记录
+
+1. **FastAPI 422 错误** — POST 端点定义了 Pydantic 请求体（`ProcessRequest`、`ExtractRequest`），空 POST 会报 422。需要传 `{}` 或 `{"use_model": true}`。
+
+2. **远端 MySQL 缺列** — `rules_json` 列不存在导致 `fact_pipeline_runner.py` 500 崩溃。Flyway 迁移未应用到远端 DB，需要手动 ALTER TABLE。
+
+3. **Python httpx 同步阻塞** — `httpx.Client(timeout=43200)` 在等待服务器处理期间不返回，导致 Python 脚本无 log 输出数小时，容易被误判为卡死。**这不是卡顿，是正常等待。** 本质原因是 extract 接口是同步一次性返回所有结果的。
+
+4. **Windows 端口 TIME_WAIT** — 多次启停后，旧连接的 TIME_WAIT 状态阻止新端口绑定（`[Errno 10048]`）。需要等待 30-60 秒或换端口。
+
+5. **PowerShell 内联 Python 字符串引号** — PowerShell 的 `"` 和 Python 的 `"`/`'` 频繁冲突。通过写 `.py` 文件执行可完全避免。
+
+6. **后台进程端口残留** — `Start-Process` + `CreateNoWindow` 启动的进程，旧实例被杀后可能残留 TIME_WAIT。建议用 `netstat -ano | findstr :18082` 确认端口释放。
+
+7. **代码热加载** — uvicorn 默认不 reload，代码修改后必须重启进程。
+
+8. **书顺序影响总耗时** — Book 6 西游记 102 章最大，放在中间跑可能导致 Pipeline 总耗时由最慢的书决定。策略: 最慢的放最后，这样前面的书完成后还能继续跑后续 phase。
+
+### 学习点
+- 把长时间运行的 Python 脚本写成 `.py` 文件，用 `Start-Process` 后台启动，避免 PowerShell 超时
+- POST body 必须有: FastAPI Pydantic 模型需要 `{}` 最低限度的 body
+- 新增列/表后需要手动在远端 DB 执行 ALTER TABLE/CREATE TABLE
+- 先跑 1-2 本书验证全流程，再放全量 5 本
+- 词表系统的大模型审计应该在抽取完成后单独触发，不阻塞主 Pipeline
+
+### Embedding 踩坑：三层嵌套阻塞
+
+**根因链路：**
+1. chunk 最大 21584 bytes（≈7000 汉字），CPU 编码本身需几十秒
+2. `model.encode()` 直接写在 async handler 里 → 阻塞 uvicorn 事件循环 → HTTP 响应发不出去
+3. PyTorch 在工作线程初始化（`run_in_executor` 内部）→ MKL/OpenMP 线程池混乱 → 16 核跑满 → 系统卡死
+
+**表象：** 服务 health check 正常，但 index 请求无日志无返回，CPU 300-800%。
+
+**修复方案（四管齐下）：**
+1. `main.py` — 启动时主线程预加载 embedding 模型
+2. `index_runner.py` — 整个 index 流程用 `asyncio.to_thread` 扔到线程池
+3. `embedding_client.py` — 同步/异步双版本，>45000 字符截断
+4. `rag-agent.service` — `OMP_NUM_THREADS=4` 限制 MKL 线程数
+
+## 2026-05-20 — 远端部署全流程 Pipeline 调试
+
+### 背景
+Stage 2-7 的远端 pipeline 已经写完，但在实际跑 Book 6-10 时反复失败。每次修了一个问题又出现新问题，来回折腾了大半天。
+
+### 暴露的问题链
+
+1. **pipeline 脚本写死了 `use_model: false`** → extract 不调用模型，只有规则占位，关系/事件全部为空
+2. **修好 `use_model: true` 后** → 模型返回 400，ctx-size=8192 不够
+3. **修好 ctx-size=65536 后** → max_tokens=4096 太小，模型输出被截断，JSON 解析失败
+4. **修好 max_tokens=16384 后** → temperature=0.3 太低，梗概输出保守
+5. **修好 temperature=0.5 后** → 发现 prior_hint prompt 的 `.format()` 与 JSON 花括号冲突
+
+### 根因
+
+**单点修复，缺链路扫描。**
+
+每次只看到眼前报错的那一个参数，没有系统性地检视整个提取链路中所有参数的联动关系。一个完整链路涉及：
+```
+system_prompt → template_engine → temperature → ctx-size → max_tokens → .env → systemd restart → health_check → end_to_end_test
+```
+
+改其中任意一个，都应该检查全部。
+
+### 修复模板
+
+以后修改模型/管线参数时，先执行：
+1. 列出完整参数链路
+2. 每个参数检查是否要联动调整
+3. 改完后重启所有依赖服务
+4. 跑一次端到端验证（单本书的一个阶段）再放全量
+
+### 事后排查发现的两个隐藏问题
+
+1. **模型输出 JSON key 名不匹配**：模型输出 `entities`，管线读 `entity_mentions`。84 分钟提取白费。
+2. **模型输出 JSON 语法错误**：`Expecting ',' delimiter` — Qwen3.5-9B 自由输出时 JSON 格式不可靠，大量回退到规则模式。
+
+### 修复
+- Prompt 指定精确 JSON 结构（字段名 + 嵌套层次）
+- 新增 GBNF grammar 文件（`prompts/extraction_output.gbnf`），llama.cpp 层面强制输出合法 JSON
+- `chapter_summary` 字段从模型输出抓取并正确传递
+
+### 学习点
+- 配置参数从来不是独立的。`ctx-size` 决定 `max_tokens` 的上限，`use_model` 决定是否需要关注 `ctx-size`。
+- 修复应该是一次性审查整个链路，而不是见一个修一个。
+- LLM 输出 JSON 时，prompt 暗示不够——必须用 grammar 强制约束。
+- 数据链路中每个 key 名必须从 prompt → 模型输出 → 解析 → 存储 → 读取 全程一致。
+- 成功数 102/102 不代表数据是对的。需要抽样验证实际内容。
+
+---
+
+## 2026-05-19 — Stage 0 重启：从训练管线改为 AI 阅读分析 Agent
+
+### 背景
+用户确认远端数据库已删除，项目从头开始。旧约束如 “Java 只能写 `novel_book_source`” 和旧 26 表协议不再保留。项目主线改为 API-first 小说阅读与创作分析 Agent。
+
+### 决策
+- 总目标改为：Book → Chapter → Chunk → ChapterFact → Evidence/Citation → Entity Governance → Retrieval QA → Narrative Graph。
+- 第一版 RAG 采用 Evidence-first RAG，不直接做 GraphRAG。
+- 向量数据库固定为 Qdrant，不再以 Chroma 作为主线候选。
+- embedding 模型固定为 `Qwen/Qwen3-Embedding-0.6B`，初始 1024 维，cosine。
+- 检索策略固定为 Evidence-first Hybrid RAG：lexical + dense + structured ChapterFact + fusion，后续再加 rerank。
+- DeepSeek API 用于概览、校验、审查和高风险判断；本地 9B 用于批量抽取和草稿生成；规则/NLP 做切分、预扫描和 evidence 校验。
+- Java 暂定保留为产品后端，但业务代码将重写；Python `rag-agent` 负责 AI worker。
+- 内部文本统一 UTF-8，MySQL 使用 `utf8mb4`；输入编码只在 ingestion 解码一次。
+- `vibe-learn` 从 practice snapshot 转为 stage harness + route marker + pitfall guard。
+
+### 修改
+- 重写 `AGENTS.md`
+- 新增 `docs/00-product-goal.md` 到 `docs/09-deployment.md`
+- 重写 `schema.sql` 和新增 `deploy/remote/schema.sql`
+- 重写 `.opencode/skills/vibe-learn/SKILL.md`
+- 重写 `vtl_closing.py`，不再检查 practice
+- 新增 `docs/learn/route-markers.md`
+- 更新 `docs/learn/current-stage.md` 与 `vtl-state.json`
+
+### 风险
+- 旧文档仍保留，后续 agent 必须以新的 `AGENTS.md` 和 `docs/00-09` 为当前权威入口。
+- `schema.sql` 和 `deploy/remote/schema.sql` 目前是两份同步副本，后续如果修改需要同时更新或改成单一生成源。
+- Java 是否长期保留需要在 Stage 1 前最后确认。
+
+### 学习点
+- 对 AI/RAG 项目，practice 副本的学习价值低于 harness 约束、路线标注和质量闸门。
+- GraphRAG 应该是通过审核事实的投影，不应该作为第一版事实源。
+
+## 2026-05-18 — 本地端 Schema 简化：只写 novel_book_source 一张表
+
+### 背景
+远端调整了数据库策略：Java 上传不再写 `novel_book` + `novel_book_source` 两张表，改为只写 `novel_book_source` 一张表。其余 25+ 张表全由远端 Python 管线管理。
+
+### 修改
+- **删除 25 个文件**：`NovelBook`/`NovelChapter`/`NovelChatSession`/`NovelChatMessage`/`NovelCitation` 实体、对应 Mapper、Service、Controller、VO/DTO、Enum
+- **简化 `NovelBookSource`**：去掉 `bookId`，`status`→`bookStatus`，`sourceFilename`→`sourceFileName`，新增 `buildStatus`
+- **BookSourceMapper**：INSERT/UPDATE 去掉 `book_id`、`created_by`、`updated_by`，字段名对齐远端 `source_file_name`/`book_status`
+- **`BookSourceServiceImpl`**：去掉所有 `NovelBook`/`BookMapper` 相关代码，只写 `novel_book_source`
+- **`BookOverviewServiceImpl`**：`getBookId()`→`getId()`（表合一后 source 自身 id 即 book 标识）
+
+### 关键决策
+1. **远端新建表不带 audit 列**（无 `created_by`/`updated_by`），Java SQL 中去掉对应字段
+2. 多文件合并上传（聊斋志异三本合一）继续保留，同样只写 `novel_book_source`
+3. `AgentRun`/`AgentStep` 追踪保留，`book_id` 改为 `source.getId()`
+
+### 验证
+- `mvn -q compile` 通过
+
+### 踩坑
+- `target/` 缓存的旧 `BookMapper.xml` 导致 MyBatis 启动失败，需 `mvn clean`
+- 远端表没有 `created_by`/`updated_by` 列，第一次上传报 `Unknown column 'created_by'`
+
+---
+
+## 2026-05-18 — 本地端 Demo 6：Neo4j 查询 + 审核 API 包装 + BookOverview 业务逻辑
+
+### 背景
+远程端已跑完西游记 709 chunk 的实体/关系/事件全量抽取（8833 实体、50 万+ 关系、417 事件），但本地端 Java 缺少前端可调用的图谱查询 API、审核包装层和 book_overview 确认流程。
+
+### 本次修改
+
+**新增：Neo4j 只读查询 API（6 个端点）**
+- `GET /api/neo4j/books/{bookId}/entities` — 实体列表（支持 type 筛选）
+- `GET /api/neo4j/entities/{entityProfileId}` — 实体详情 + 关系
+- `GET /api/neo4j/entities/{entityProfileId}/relations` — 实体的所有关系
+- `GET /api/neo4j/books/{bookId}/graph` — D3.js 可用的全量图谱数据（nodes + edges）
+- `GET /api/neo4j/books/{bookId}/events` — 事件列表
+- `GET /api/neo4j/books/{bookId}/stats` — 图统计
+
+技术：Neo4j Java Driver 6.0.5（Spring Boot 4.0.6 管理），直连远程 Neo4j Bolt（SSH Tunnel），`@PostConstruct` 延迟初始化防止 Neo4j 未启动时阻塞应用启动。
+
+**新增：审核 API 包装**
+- `POST /api/review/candidates` — 获取候选实体列表（代理远程）
+- `POST /api/review/candidates/action` — approve / reject / edit_and_approve（代理远程）
+- 模式：纯 HTTP 代理，远程 rag-agent 负责写 entity_profile + Neo4j
+
+**新增：BookOverview 业务逻辑**
+- `GET /api/books/sources/{bookSourceId}/overview` — 获取概览（含确认状态）
+- `PUT /api/books/sources/{bookSourceId}/overview` — 更新状态（confirm / edit / reject）
+- 状态流：PENDING_USER_CONFIRMATION → CONFIRMED / USER_EDITED / REJECTED
+- 通过 MyBatis 直连远程 MySQL 读写 `novel_book_source.book_overview` 和 `overview_status`
+
+**被修改的文件**：
+- `pom.xml` — +neo4j-java-driver
+- `application.yml` / `application-dev.yml` — +Neo4j 连接配置
+- `NovelBookSource.java` — +bookOverview、overviewStatus 字段
+- `BookSourceMapper.xml` — update SQL 增加 book_overview、overview_status
+- `GlobalExceptionHandler.java` — +Neo4jQueryException 处理
+
+### 关键决策
+1. **Neo4j 读取方式**：Java 直连 Neo4j Bolt（不需要远程额外暴露只读 API）
+2. **审核流程归属**：Java 做 HTTP 代理，远程 rag-agent 负责审批逻辑和 Neo4j 写入
+3. **BookOverview 存储**：Java 通过 MyBatis 直读远程 MySQL，不引入独立存储
+4. **Jackson 版本**：Spring Boot 4.0.6 使用 Jackson 3.x（包名 `tools.jackson.*` 而非 `com.fasterxml.*`）
+5. **Neo4j 驱动初始化**：不阻塞应用启动，连接失败仅 warn 不抛异常
+
+### 依赖远程侧
+- `novel_book_source` 表需要 `book_overview` TEXT 列（已有）和 `overview_status` VARCHAR(30) 列
+- 远程 rag-agent 需要暴露 `/review/candidates` 的 GET/POST 端点
+- Neo4j Event 节点需要 `book_id` 属性（当前 Cypher 使用 `WHERE ev.book_id = $bookId`）
+
+### 踩坑
+- Neo4j Java Driver 6.x API 与 5.x 不同：`withConnectionTimeout()` 使用 `(long, TimeUnit)` 而非 `Duration`
+- `executeRead()` 回调中不要手动 try-with-resources 关闭 Transaction，由 driver 管理
+- `asList()` 在 6.x 中直接返回 Java 原生类型（Map/List），不需要 `Value::asMap` 转换
+
+### 验证
+- `mvn -q test` 通过，应用上下文加载成功
+- Neo4j 驱动初始化成功（测试环境连接 localhost:17687 验证通过）
+
+---
+
 ## 2026-05-16 — vibe-learn 增加 Python 学习线
 
 ### 背景
@@ -247,3 +510,284 @@ Python 练习不单独刷语法题，也不强行制造练习。优先从当前 
 
 ### 决策：单一数据库 novel_bridge + book_id 归属
 - **原因**：连接管理简单、支持后续多书问答、建表脚本可复用
+# 2026-05-24 - Stage 3 ReaderAgent answer demo
+
+## Completed
+
+- `POST /api/reader-agent/run` real smoke test passed with `RESPONDED`, non-empty answer, and 6 citations.
+- `GET /api/reader-agent/runs/{run_id}/trace` returned run, steps, and traces.
+- `novel_retrieval_trace` is now part of root schema, remote schema, and Java Flyway migration `V7__add_retrieval_trace.sql`.
+- Qwen3.5 native `llama-server` must start with explicit chat template, `--jinja`, and `--reasoning off`; otherwise chat completion may return empty `message.content`.
+
+## Follow-up
+
+- `PreprocessAgent` still needs action wrappers around existing pipeline.
+- `KnowledgePatch` remains propose/review skeleton only.
+- ReaderAgent model-call recording is not fully wired yet; current answer mode records run/steps/trace.
+## 2026-05-25 - Stage 6C demo presentation correction
+
+### Pitfall: evidence output is not a reader answer
+
+- **Symptom**: `analyze` and `trace` demo results looked like internal retrieval output. The page showed entity type labels, relation records, chunk excerpts, and chunk ids as if they were chapters.
+- **Root cause**: minimal deterministic modes treated retrieved evidence excerpts as final summaries. The frontend then rendered those summaries directly, so the demo exposed RAG plumbing instead of model analysis.
+- **Correction**:
+  - evidence remains mandatory, but it is now analysis input, not the primary user-facing answer;
+  - `trace` timeline summaries are concise relation-state/context summaries, while raw excerpts stay in evidence/debug views;
+  - `analyze` now attempts model synthesis from compressed evidence and structured clues, with rule-based fallback;
+  - answer prompt was relaxed from a rigid 3-5 sentence template to a natural response contract.
+- **Lesson**: for portfolio demos, evidence-first does not mean evidence-as-answer. The product route should be `retrieve evidence -> model analyzes evidence -> validate answer has support -> expose citations/debug separately`.
+
+## 2026-05-26 — Stage 6H.1 orchestration trace closure
+
+### Finding: agent had structure but not runtime wiring
+
+Another model review found 6 specific issues after the first fix round:
+1. ReaderRequest had no `tool_sequence` field → /run couldn't receive external plan
+2. ReaderAgent didn't create orchestration run → tool calls had no shared run_id
+3. ToolExecutor had no tool_call_store → orchestrator tool calls not persisted to DB
+4. audit ran twice (once empty, once with answer)
+5. shared_run_id was always None (tried to capture from mode output but captured too late)
+6. No end-to-end test for tool_sequence → audit → polish pipeline
+
+### Fixes applied
+
+| Fix | What | File |
+|-----|------|------|
+| ReaderRequest.tool_sequence | Added optional `list[ToolCallStep]` field | `schemas.py` |
+| /run passes tool_sequence | `agent.run(req, tool_sequence=req.tool_sequence)` | `reader_agent.py` |
+| Orchestration run | ReaderAgent creates top-level AgentRun with mode="orchestrator" | `agent.py` |
+| MysqlToolCallStore inject | ReaderAgent.__init__ creates store when conn available | `agent.py` |
+| Single audit | audit step injects answer from accumulated, runs once | `agent.py` |
+| run_id at start | accumulated["run_id"] = orchestration_run_id (set before loop) | `agent.py` |
+
+### Lesson
+Review cycles work. The first round fixed visible bugs (field loss, no polish). The second round fixed the deeper structural issues (no orchestration run, no tool call store). The pattern of "another model reviews → finds wiring gaps → fixes them" is effective for runtime closure. Add this to playbook.
+
+## 2026-05-26 — Stage 6H runtime closure fixes
+
+### Pitfall: planner.tool_sequence existed but was not consumed by /run
+
+- **Symptom**: another model review found that even though `plan()` correctly produced `tool_sequence`, the `/api/reader-agent/run` endpoint never actually used it. It relied on `_default_sequence()` which was functional but dropped most fields from the ReaderRequest.
+- **Root cause**: the codebase had the structural pattern (ToolCallStep, tool_sequence in PlanResponse) but the `reader_agent_run` API endpoint didn't bridge the gap. It accepted a `ReaderRequest` which has no `tool_sequence` field, and `ReaderAgent.run()` only used `tool_sequence` when explicitly passed.
+- **Fix**: `ReaderAgent.run()` now calls `reader_plan()` internally when `tool_sequence is None`. This ensures the plan is always consumed.
+- **Lesson**: orchestration patterns must have end-to-end tests. Schema/registry tests are not enough — you need to verify that data flows from API endpoint → planner → agent → tools → response.
+
+### Fix list
+
+| Fix | File | Change |
+|-----|------|--------|
+| #1 tool_sequence consumption | agent.py | run() calls reader_plan() when no tool_sequence |
+| #2 field loss | agent.py | _default_sequence() passes all ReaderRequest fields |
+| #3 hybrid_search → memory | agent.py | items → L2 EvidenceMemory |
+| #4 audit receives answer | agent.py | audit tool injects accumulated answer, writes back polished |
+| #5 tool call trace | agent.py | ToolExecutor gets run_id/step_id |
+| #6 entity_name passthrough | tools.py | hybrid_search tool passes entity_name to RetrievalRunner |
+
+## 2026-05-26 — Provider comparison eval + prompt engineering
+
+### Eval 核心发现
+
+运行 `test_provider_comparison.py` 对比 Local 9B vs DeepSeek，37 个 eval cases：
+
+- **Local 9B**: 31/37 PASS (83.8%), avg 10s/case, avg ~715 chars, avg ~4.2 citations
+- **DeepSeek**: 21/29 PASS (72.4%), avg 7s/case, avg ~410 chars, avg ~2.6 citations
+
+### 主要结论
+
+1. **86% 的 FAIL 原因是检索结果为 0，不是模型质量**。两个 provider 共享同一套检索系统，当检索失败时都 FAIL。
+2. **唯一双 FAIL 主题：崂山道士道理** — 知识库完全缺失该主题。
+3. **西游主题整体薄弱**：Local 9B 有 3 个西游 FAIL，西游记 102 章但某些主题检索缺失。
+4. **水浒角色别名导致检索失败**：宋江(及时雨)、鲁智深(鲁提辖)等别名未被检索覆盖。
+
+### 工程改动
+
+基于分析做了 3 项改动：
+1. **Retrieval Quality Gate** — QaRunner 在 `contexts` 为空时直接返回 INSUFFICIENT_EVIDENCE，节省一次无效 LLM 调用。
+2. **Provider-specific prompts** — Local 9B prompt 加强"每个论断必须引用"约束；DeepSeek prompt 增加枚举性问题要求和最低长度指导。
+3. **Provider-specific answer style contract** — 各自独立，不再共享同一套输出约束。
+
+### 记录
+
+- `docs/provider-comparison-analysis.md` — 完整分析报告
+- `apps/rag-agent/analysis_result.md` — DeepSeek 的分析原始输出
+- `scripts/test/test_provider_comparison.py` — 对比 eval 脚本
+- `scripts/test/analyze_provider_comparison.py` — DeepSeek 分析脚本
+
+## 2026-05-25 — Stage 6E ReaderAgent planner and answer polish
+
+### Decision: backend planner replaces frontend-only smart selection
+
+- **Symptom**: `/demo` already had smart mode selection, but it was pure JavaScript. The JS version worked, but duplicated entity knowledge, lacked confidence scoring, was untestable offline, and was not reusable by other clients.
+- **Change**: Added `POST /api/reader-agent/plan` with the same deterministic logic in Python. Demo JS now calls the backend planner, with local JS rules as fallback.
+- **Result**: planner has 18 unit tests, confidence scores, warnings, and a `request_patch` contract.
+- **Lesson**: when frontend and backend share similar business logic (mode inference, entity matching), put the canonical version in the backend where it can be tested and reused. Keep frontend rules only as fallback.
+
+### Decision: answer polish as pure functions
+
+- **Why**: both local 9B and DeepSeek outputs can contain `<cite>` tags, chunk IDs, and punctuation artifacts. These are formatting issues, not content issues, and should be cleaned deterministically without model calls.
+- **Implementation**: `answer_polish.py` provides `strip_citation_tags`, `strip_internal_ids`, `clean_duplicate_punctuation`, `collapse_whitespace`, and the composite `polish()` function.
+- **Status**: functions exist and pass 12 tests, but are not yet wired into mode runners (deferred to Stage 6G).
+- **Lesson**: separating cleanup from model generation keeps the cleanup logic testable and provider-independent. Integration into the execution pipeline can happen in a later stage.
+
+## 2026-05-25 — Stage 6F/6G session memory and answer polish complete
+
+### Decision: in-memory session store for demo
+
+- **Why**: DB-backed session (MySQL) would add schema changes, migration scripts, and store implementation overhead. The demo already has MySQL connection issues during long LLM calls. In-memory avoids that.
+- **Trade-off**: sessions are lost on server restart. Acceptable for demo — sessions are numbered sequences, not user accounts.
+- **Implementation**: async `asyncio.Lock` around a `dict[int, SessionState]`. Each session stores turn history, current target, and evidence IDs.
+
+### Decision: reference resolver is deterministic, not model-based
+
+- **Why**: pronoun resolution in a novel domain ("他" could be any of 20+ characters) is genuinely complex if done with full NLP. But for demo purposes, "他" always resolves to `session.current_target_name` — which is exactly what the user meant because they just asked about that target.
+- **Result**: the resolver handles "他"/"她"/"他们", relation refs ("这关系"), trace refs ("这条线索"), evidence refs ("这些证据"), and mode-switch requests ("换成时间线").
+- **What it doesn't handle**: ambiguous pronouns in multi-character discussions. A model-based planner could do this later.
+
+### Decision: answer polish in agent.py post_process, not per-mode
+
+- **Previous approach**: each mode runner would need to call `polish()` individually. If a new mode is added, polish might be forgotten.
+- **New approach**: `_post_process()` in `agent.py` wraps every mode runner. All answers get formatted cleanup + audit notes.
+- **Provider awareness**: `polish(text, "local")` does full cleanup (internal IDs, punctuation, whitespace). `polish(text, "deepseek")` skips internal ID removal because DeepSeek outputs are cleaner.
+
+### Decision: broad claim detection is pattern-based
+
+- **Patterns**: "古代百科全书", "最重要的", "毫无疑问", "巅峰之作", etc.
+- **Limitation**: pattern-based detection has false positives and misses novel broad claims. But it's better than nothing — at least the system can flag "这是毫无疑问最重要的作品" without any evidence support.
+- **Future**: a model-based audit pass (DeepSeek verifying each claim against evidence) would be more accurate but slower and costlier.
+
+## 2026-05-25 — Stage 6E ReaderAgent planner and answer polish
+
+### Decision: backend planner replaces frontend-only smart selection
+
+- **Symptom**: test case 7 ("追踪宋江成为梁山核心的关键线索") returned `target_name="宋江, 梁山"` because both entities appear in the question. The test initially expected just `"宋江"`.
+- **Root cause**: the planner correctly identifies all known targets, not just the primary target. "梁山" is a known setting in book 10.
+- **Correction**: adjusted the test expectation to accept `"宋江" in target_name`. The planner behavior (capture all known entities) is correct — the caller should decide which target is primary.
+- **Lesson**: entity target collection should return all matches; narrowing to a primary target is a downstream concern.
+
+
+## 2026-05-26 — Demo 前端修复 + reference resolver 增强
+
+### Bug: Health check 中 Embedding 的 HTML id 不匹配
+- **症状**: /health/embedding 返回 200 OK，但前端 Embedding 点一直红色
+- **根因**: HTML id 是 h-emb，JS 索引却是 h-embedding → 查不到元素 → catch → 标红
+- **修复**: hnames 改为 [[html_id, api_path], ...] 双列格式
+
+### Bug: 详情面板无法关闭
+- **症状**: 点击回答的「详情」按钮后右侧面板弹出，没有关闭按钮
+- **修复**: 面板头部加 ✕ 关闭按钮
+
+### Bug: 参考问题错字
+- **症状**: 搜神记问题列表有「报效观念」
+- **修复**: 改为「报应观念」
+
+### Bug: 会话记忆元问题不处理
+- **症状**: 用户问「我刚问的是什么」，系统不记得上一轮对话
+- **根因**: reference_resolver.py 只处理代词和关系引用，不处理「刚才」「刚问」等元引用
+- **修复**: 增强 resolver，检测「刚问」「我刚才」「我上一轮」等模式，替换为带 session context 的检索问题
+
+## 2026-05-26 — MemoryManager runtime wiring + reference resolver 增强
+
+### Wiring: MemoryManager 接入 unified_pipeline
+MemoryManager 之前是孤岛。unified_pipeline 不接收 MemoryManager，不记录 session。
+改动: run_pipeline() 现在接收 memory_manager，每轮自动: 1.重置 L1/L2 2.写 L1 plan 3.QueryRewriter 从 L0 取最近3轮 4.完成后 record_turn 5.超过10轮自动压缩
+
+### Reference resolver 增强
+新增代词: 这位/该人; 关系: 他俩/他们俩; 线索: 这条线/这个走向; 回答: 你的回答/你刚才说的; 证据: 你引用的; 模式: 换一种说法/换个角度/继续说/展开说说; 前序问题: 我刚问/我刚刚问/我问的是什么/我上一轮/刚才的问题/之前的问题/第一个问题/最开始的问题
+
+### 改动文件
+- unified_pipeline.py — 新增 MemoryManager 参数 + 会话窗口管理
+- reader_agent.py — /run 传递 MemoryManager
+- planner.py — session context 使用 MemoryManager L0
+- reference_resolver.py — 新增 20+ 引用模式
+
+## 2026-05-27 — Pipeline 重跑 + 背景任务 + 流水线前端（7 个坑）
+
+### 坑 1：CRLF 导致 chunker 段落检测完全失效
+
+**症状**：搜神记只有 85 chunks（预期 400+），聊斋 471（预期 1500+），所有书的 chunk 数偏低。
+
+**根因**：`chunker.py` 按 `\n\n` 切段落，但 MySQL 存的是 `\r\n`（Windows CRLF）。  
+`\r\n\r\n` ≠ `\n\n` → 整章变成一个"段落" → `smart_split_text` 在 50% 中点硬切 → chunk 内容不连贯。
+
+**修复**：`chunk_chapter()` 入口处加 `chapter_text.replace('\r\n', '\n').replace('\r', '\n')`。
+
+**效果**：聊斋 471→1511 chunks，搜神记 85→147 chunks。
+
+**教训**：字符串处理的边界问题（换行符/编码/空格）在 pipeline 中影响巨大且静默。遇到数据量异常先检查数据本身的格式。
+
+### 坑 2：规则回退硬编码空列表，模型不可用时关系/事件数据全丢
+
+**症状**：`use_model=False` 时实体提取正常但关系/事件为 0。
+
+**根因**：`extraction_runner.py:_rule_extract()` 中 `relation_mentions = []`、`event_mentions = []` 是硬编码占位符，从未实现。
+
+**修复**：添加启发式规则——同段共现实体 + 关系动词匹配（25 个关系动词：是/有/拜/率/居 等）+ 事件关键词（20 个动作词：打/战/杀/救 等）。
+
+**教训**：所有 fallback 路径必须等价于主路径的能力子集。硬编码空列表不是 fallback，是静默丢数据。
+
+### 坑 3：Neo4j 全局清除——`clear_all()` 删了所有书
+
+**症状**：多本书运行时，P7 投影清除了所有书的图数据。
+
+**根因**：`graph_projector.py:31` 调用 `neo4j_client.clear_all()` 执行 `MATCH (n) DETACH DELETE n`，无 book_id 过滤。
+
+**修复**：所有节点创建时加 `book_id` 属性，新增 `clear_book(book_id)` 方法，`project_book()` 改用 `clear_book()`。
+
+**教训**：全局销毁操作（DROP TABLE / DELETE ALL / clear_all）必须显式声明危险，且默认不使用。多租户（多书）架构必须按 scope 操作。
+
+### 坑 4：MySQL 共享连接被消费者 close() 导致下游崩溃
+
+**症状**：P2 "Already closed" 错误，P3 "KeyError: 0"。
+
+**根因**：`MysqlClient.connect()` 返回的是**共享单例连接**。P1 runner 在 `finally` 里调 `conn.close()` 关闭了它。`_is_connected()` 检测到连接断开后重建，但重建时 `pymysql` 内部状态混乱导致 "Already closed"。
+
+**修复**：彻底去掉所有 `conn.close()` 调用。`MysqlClient` 管理自己的连接池，消费者只使用不销毁。
+
+**教训**：共享资源的生命周期管理者只能有一个。谁创建谁销毁，消费者只读不关。对数据库连接这种频繁使用的共享资源，加文档明确标注"不要 close()"。
+
+### 坑 5：`esc()` 函数缺失 — 流水线页面一直"加载中"，定位耗时>1h
+
+**症状**：`/pipeline` 页面显示"加载中"，Ctrl+F5、无痕窗口都无法解决。
+
+**根因**：`frontend.py` 的流水线 HTML 是独立模板，从 demo.py 复制时漏掉了 `function esc()`。`renderPipeline()` 中 64 处调用 `esc()` 全部失败，但页面停留在"加载中"初始状态，无任何错误提示（页面没有 `window.onerror` 处理器）。
+
+**定位过程**：
+1. 怀疑服务器挂了 → 健康检查通过 ✅
+2. 怀疑 API 挂了 → curl 返回 200 ✅
+3. 怀疑 JS 语法错误 → python 检查大括号平衡 ✅
+4. 怀疑浏览器缓存 → 无痕模式 → 依然失败 ❌
+5. 最终用户开 F12 Console 看到 "esc is not defined" → 1 秒定位
+
+**如果一开始就开 F12 Console**：定位时间从 >1h 降到 5s。
+
+**教训**：
+- 前端不加载的第一步是 **F12 → Console**，不是问"服务器挂了没"
+- 创建新页面时必须确认所有 helper 函数完整
+- 页面应有 `window.onerror` 显示浮层错误
+- 调试协议：浏览器 → Console → Network → 再问后端
+
+### 坑 6：JS 同名函数在多次编辑中静默覆盖
+
+**症状**：自动刷新只执行 `setInterval`，不更新按钮进度状态。
+
+**根因**：`frontend.py` 的 JS 尾部出现了两个 `async function refreshStatus()` —— 第一次加的是完整实现，第二次编辑时又加了一个 `async function refreshStatus(){setInterval(...)}`。第二个定义覆盖了第一个。
+
+JS 允许同名函数重复定义，不报错，最后一个生效。文件经过多次 edit 操作，每次都是在字符串中追加，产生了重复。
+
+**修复**：删掉第二个函数定义，把 `setInterval` 放在函数体外独立调用。
+
+**教训**：在 f-string 模板中多次编辑 JS 后，必须检查有无残留的函数/变量重复定义。用 `grep "async function"` 快速检查。
+
+### 坑 7：热重载在快速连续修改时漏检文件变更
+
+**症状**：代码已经修正，curl 检验 API 返回 200，但浏览器永远拿到旧 HTML。
+
+**根因**：`uvicorn --reload` 的 WatchFiles 依赖文件系统事件，在多个文件快速连续修改时可能遗漏事件。`__pycache__` 中的 `.pyc` 缓存了旧代码，重启后也不一定刷新。
+
+**修复**：显式删除 `__pycache__` 再杀进程重启，而不是依赖热重载。
+
+**教训**：热重载是开发便利，不是可靠部署。修改代码后如果观察到的行为与代码不符，执行：
+1. `Remove-Item -Recurse -Force __pycache__`
+2. 杀进程重启
+3. curl 验证输出
+

@@ -1,0 +1,10 @@
+修复以下模型输出的 JSON，使其符合目标 schema。
+不要修改语义内容，不要添加新的事实。
+
+目标 schema:
+{target_schema}
+
+损坏的输出:
+{malformed_output}
+
+输出修复后的 JSON 只。

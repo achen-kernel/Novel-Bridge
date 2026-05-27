@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge -e "SELECT relation_type, source_entity_name, target_entity_name FROM novel_relation_fact WHERE book_id = 6 AND (source_entity_name LIKE '%唐僧%' OR target_entity_name LIKE '%唐僧%') LIMIT 30;"

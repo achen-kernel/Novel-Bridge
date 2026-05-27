@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4 -e "SELECT book_id, COUNT(*) as total, SUM(CASE WHEN summary IS NULL OR summary = '' THEN 1 ELSE 0 END) as empty_summary FROM novel_event_fact GROUP BY book_id;"

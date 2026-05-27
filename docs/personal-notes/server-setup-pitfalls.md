@@ -758,6 +758,23 @@ if (existing.isPresent()) {
 
 这样重复上传返回的是 400 + 明确提示"File already uploaded"，而不是 500 + 唯一索引冲突。
 
+## 经验教训：编码转换必须在 Java 写入 MySQL 之前完成
+
+### 问题背景
+上传中文 TXT 时，Java 默认用 `new String(fileBytes, StandardCharsets.UTF_8)` 读取，但中文 TXT 常见编码为 GBK/GB18030，导致入库数据乱码，远端的 rag-agent（Python）基于乱码切章、抽实体全部失效。
+
+### 根因
+编码转换只有一个正确的节点：Java → MySQL。远端的 Python rag-agent 假设数据库里永远是 UTF-8，不做任何转换。如果 Java 侧没对齐，远端无法修复——它拿不到原始字节，只有 Java 写入的那个乱码字符串。
+
+### 解决方式
+1. **JDBC URL** 声明 `useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci`
+2. **Java 自动检测**：`CharsetDecoder` 先试 UTF-8，解码失败回退 GB18030
+3. **手动覆盖**：`encoding=GBK` 参数留给极端情况
+4. **`encoding` 字段记录**：`novel_book_source.encoding` 存实际使用的编码
+
+### 经验延伸：类似场景的主动记录原则
+**以后每次遇到类似的边界转换问题（文件编码、时区、换行符、JSON 序列化、数据库 collation 等），都要主动记录到本文档，并提炼成可复用的规则添加到 `personal-vibecoding-playbook.md`。**
+
 ## 后续处理建议
 
 1. 清理异常 `{rag-agent}` 目录。

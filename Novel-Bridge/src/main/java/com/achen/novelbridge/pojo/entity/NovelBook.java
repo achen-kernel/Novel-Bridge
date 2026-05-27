@@ -1,24 +1,47 @@
 package com.achen.novelbridge.pojo.entity;
 
-import com.achen.novelbridge.common.base.BaseEntity;
-import com.achen.novelbridge.common.enums.BookStatus;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 
-@Getter
-@Setter
-public class NovelBook extends BaseEntity {
+import java.time.LocalDateTime;
 
-    private Long projectId;
-    private Long folderId;
+/**
+ * Novel book source record.
+ * <p>
+ * Stores uploaded book raw text and processing state.
+ * </p>
+ *
+ * @NB-DATA-WRITE
+ */
+@Data
+public class NovelBook {
+
+    private Long id;
+
     private String title;
+
     private String author;
-    private String sourceFilename;
-    private String sourcePath;
-    private Long fileSize;
-    private String fileType;
-    private Integer totalChapters;
-    private Integer totalChunks;
-    private BookStatus status;
+
+    private String language;
+
+    private String sourceFileName;
+
+    private String sourceEncoding;
+
+    private String sourceHash;
+
+    private String rawText;
+
+    private Integer charCount;
+
+    private Integer chapterCount;
+
+    private Integer chunkCount;
+
+    private String status;
+
     private String errorMessage;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
 }

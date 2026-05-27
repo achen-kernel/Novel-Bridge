@@ -1,13 +1,2 @@
-# ===== 远程开发环境（通过 SSH tunnel 连远程 Linux 服务） =====
-# 启动前:  .\scripts\remote\nb_tunnel_up.ps1
-# 密码: 远程服务器 .env 中的 MYSQL_ROOT_PASSWORD
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:13306/novel_bridge?useSSL=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai
-    username: root
-    password: ${MYSQL_ROOT_PASSWORD:12345678}
-
-# ---- 远程 rag-agent 端点（开发环境连远程 Linux） ----
-novel-bridge:
-  rag-agent:
-    base-url: http://192.168.3.50:18081
+# dev profile: uses same defaults as application.yml (port 13306, novel_bridge user, password from env)
+# This file exists for future dev-specific overrides

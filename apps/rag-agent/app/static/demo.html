@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f4f6f2">
+<title>NovelBridge 阅读智能体</title>
+<link rel="stylesheet" href="/static/demo.css">
+</head>
+<body>
+<div id="app">
+<div id="strip">
+<span class="si" id="h-mysql"><span class="d"></span>MySQL</span>
+<span class="si" id="h-qdrant"><span class="d"></span>Qdrant</span>
+<span class="si" id="h-neo4j"><span class="d"></span>Neo4j</span>
+<span class="si" id="h-llm"><span class="d"></span>9B</span>
+<span class="si" id="h-emb"><span class="d"></span>Embed</span>
+<span class="sep">|</span>
+<a href="/browse" style="font-size:11px">书库</a>
+<a href="/agent-runs" style="font-size:11px">Trace</a>
+<a href="/pipeline" style="font-size:11px">流水线</a>
+<button class="sbtn" id="hbtn">刷新</button>
+<a href="/config" style="font-size:11px">配置</a>
+</div>
+<div id="body">
+<div id="side">
+<div id="proj-header"><h2>项目与会话</h2><button class="sbtn" id="newProjBtn" title="新建项目">+</button></div>
+<div id="projlist"></div>
+<div class="qs" id="bkSection">
+<h2>书库</h2>
+<div id="bklist"></div>
+<div class="qs"><h3>参考问题</h3><div id="qlist"></div></div>
+</div>
+</div>
+<div id="chat">
+<div id="hdr">
+<h1>NovelBridge 阅读智能体</h1>
+<p>文学知识库问答与分析</p>
+<div class="r">
+<select id="prov" style="font-size:11px;padding:2px 4px;border:1px solid var(--line);border-radius:4px;background:var(--panel)">
+<option value="local">本地 9B</option>
+<option value="deepseek" DS_DISABLED>DeepSeek</option>
+</select>
+<button class="sbtn" id="clrbtn">清空</button>
+<button class="sbtn" id="newbtn">新建</button>
+</div>
+</div>
+<div id="msgs"></div>
+<div id="inp">
+<form id="fm" autocomplete="off">
+<input id="qi" placeholder="输入关于本书的问题..." autocomplete="off">
+<button id="sb" type="submit">发送</button>
+</form>
+<div class="ih">模式自动选择 · 支持连续追问</div>
+</div>
+</div>
+</div>
+</div>
+<div id="anchors"></div>
+<div id="dtl"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">调试详情</h3><button onclick="document.getElementById('dtl').classList.remove('o')" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:0 4px">✕</button></div><div id="dtlc"></div></div>
+
+<script>
+var NB_Q = Q_JSON_PLACEHOLDER;
+var NB_B = B_JSON_PLACEHOLDER;
+</script>
+<script src="/static/demo.js"></script>
+</body>
+</html>

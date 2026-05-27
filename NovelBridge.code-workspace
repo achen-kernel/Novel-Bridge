@@ -1,0 +1,54 @@
+{
+  "folders": [
+    {
+      "name": "NovelBridge Root",
+      "path": "."
+    },
+    {
+      "name": "Java API",
+      "path": "Novel-Bridge"
+    },
+    {
+      "name": "Python RAG Agent",
+      "path": "apps/rag-agent"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:Python RAG Agent}/.venv/Scripts/python.exe",
+    "python.analysis.extraPaths": [
+      "${workspaceFolder:Python RAG Agent}"
+    ],
+    "java.import.maven.enabled": true,
+    "java.project.sourcePaths": [],
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.ruff_cache": true,
+      "**/target": true
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.ruff_cache": true,
+      "**/target": true,
+      "**/apps/llama.cpp": true
+    },
+    "files.watcherExclude": {
+      "**/.venv/**": true,
+      "**/__pycache__/**": true,
+      "**/.pytest_cache/**": true,
+      "**/.ruff_cache/**": true,
+      "**/target/**": true,
+      "**/apps/llama.cpp/**": true
+    },
+    "python.analysis.exclude": [
+      "**/.venv",
+      "**/__pycache__",
+      "**/apps/llama.cpp"
+    ],
+    "python.terminal.activateEnvironment": true,
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "java.compile.nullAnalysis.mode": "automatic"
+  }
+}

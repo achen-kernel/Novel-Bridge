@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4 -e "SELECT fact_json->'$.characters' as chars FROM novel_chapter_fact WHERE book_id = 6 LIMIT 1;"

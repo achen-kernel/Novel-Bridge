@@ -1,103 +1,55 @@
 package com.achen.novelbridge.server.service.impl;
 
-import com.achen.novelbridge.common.enums.RunType;
-import com.achen.novelbridge.common.enums.StepStatus;
-import com.achen.novelbridge.common.enums.StepType;
-import com.achen.novelbridge.common.enums.TaskStatus;
-import com.achen.novelbridge.server.mapper.AgentRunMapper;
-import com.achen.novelbridge.server.mapper.AgentStepMapper;
 import com.achen.novelbridge.pojo.entity.NovelAgentRun;
-import com.achen.novelbridge.pojo.entity.NovelAgentStep;
-import com.achen.novelbridge.server.service.IAgentRunService;
-import lombok.extern.slf4j.Slf4j;
+import com.achen.novelbridge.server.mapper.AgentRunMapper;
+import com.achen.novelbridge.server.service.AgentRunService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
-@Slf4j
+/**
+ * Implementation of {@link AgentRunService} for managing agent run lifecycle.
+ */
 @Service
-public class AgentRunServiceImpl implements IAgentRunService {
+public class AgentRunServiceImpl implements AgentRunService {
 
-    private final AgentRunMapper runMapper;
-    private final AgentStepMapper stepMapper;
+    private static final Logger log = LoggerFactory.getLogger(AgentRunServiceImpl.class);
 
-    public AgentRunServiceImpl(AgentRunMapper runMapper, AgentStepMapper stepMapper) {
-        this.runMapper = runMapper;
-        this.stepMapper = stepMapper;
+    private final AgentRunMapper agentRunMapper;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    public AgentRunServiceImpl(AgentRunMapper agentRunMapper) {
+        this.agentRunMapper = agentRunMapper;
     }
 
     @Override
-    @Transactional
-    public NovelAgentRun createRun(RunType runType, Long bookId) {
+    public NovelAgentRun createRun(String runType, Long bookId, Object input) {
         NovelAgentRun run = new NovelAgentRun();
         run.setRunType(runType);
         run.setBookId(bookId);
-        run.setStatus(TaskStatus.RUNNING);
+        run.setStatus("RUNNING");
         run.setStartedAt(LocalDateTime.now());
-        run.setCreatedBy("SYSTEM");
-        runMapper.insert(run);
+
+        if (input != null) {
+            try {
+                run.setInputJson(objectMapper.writeValueAsString(input));
+            } catch (Exception e) {
+                log.warn("Failed to serialize input JSON for agent run: {}", e.getMessage());
+                run.setInputJson("{\"error\":\"serialization failed\"}");
+            }
+        }
+
+        agentRunMapper.insertAgentRun(run);
+        log.info("Created agent run: id={}, type={}, bookId={}", run.getId(), runType, bookId);
         return run;
     }
 
     @Override
-    @Transactional
-    public void completeRun(NovelAgentRun run) {
-        run.setStatus(TaskStatus.SUCCESS);
-        run.setCompletedAt(LocalDateTime.now());
-        runMapper.update(run);
-        log.info("AgentRun {} completed successfully", run.getId());
-    }
-
-    @Override
-    @Transactional
-    public void failRun(NovelAgentRun run, String errorMessage) {
-        run.setStatus(TaskStatus.FAILED);
-        run.setCompletedAt(LocalDateTime.now());
-        run.setErrorMessage(errorMessage);
-        runMapper.update(run);
-        log.warn("AgentRun {} failed: {}", run.getId(), errorMessage);
-    }
-
-    @Override
-    @Transactional
-    public NovelAgentStep startStep(NovelAgentRun run, StepType stepType, int order) {
-        NovelAgentStep step = new NovelAgentStep();
-        step.setAgentRunId(run.getId());
-        step.setStepType(stepType);
-        step.setStepOrder(order);
-        step.setStatus(StepStatus.RUNNING);
-        step.setStartedAt(LocalDateTime.now());
-        step.setCreatedBy("SYSTEM");
-        stepMapper.insert(step);
-        return step;
-    }
-
-    @Override
-    @Transactional
-    public void completeStep(NovelAgentStep step) {
-        step.setStatus(StepStatus.SUCCESS);
-        step.setCompletedAt(LocalDateTime.now());
-        stepMapper.update(step);
-    }
-
-    @Override
-    @Transactional
-    public void failStep(NovelAgentStep step, String errorMessage) {
-        step.setStatus(StepStatus.FAILED);
-        step.setCompletedAt(LocalDateTime.now());
-        step.setErrorMessage(errorMessage);
-        stepMapper.update(step);
-    }
-
-    @Override
-    public List<NovelAgentRun> getRunsByBookId(Long bookId) {
-        return runMapper.findByBookIdOrderByCreatedAtDesc(bookId);
-    }
-
-    @Override
-    public List<NovelAgentStep> getStepsByRunId(Long runId) {
-        return stepMapper.findByAgentRunIdOrderByStepOrder(runId);
+    public NovelAgentRun getRun(Long id) {
+        return agentRunMapper.findById(id);
     }
 }

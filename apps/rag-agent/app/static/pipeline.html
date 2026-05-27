@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NovelBridge 流水线</title>
+<link rel="stylesheet" href="/static/pipeline.css">
+</head>
+<body>
+<div class="nav"><span class="title">NovelBridge</span><a href="/demo">首页</a><a href="/pipeline">流水线</a><a href="/browse">书库</a><a href="/config">配置</a></div>
+
+<h1>NovelBridge 流水线 <small>处理流程 · 后台任务</small></h1>
+
+<div class="upload-area">
+  <h3>上传新书</h3>
+  <div class="upload-form">
+    <input type="text" id="book-title" placeholder="书名" value="">
+    <input type="text" id="book-author" placeholder="作者（可选）" value="">
+    <input type="file" id="book-file" accept=".txt" multiple>
+    <button onclick="uploadBook()">上传</button>
+    <span id="upload-result"></span>
+  </div>
+</div>
+
+<div class="bar" style="margin-bottom:14px">
+  <button class="bar-btn" onclick="loadPipeline()">刷新</button>
+  <button class="bar-btn batch" onclick="batchRun()" id="batchBtn">批量运行选中</button>
+  <span style="font-size:12px;color:#607069" id="auto-status">自动刷新 5s</span>
+</div>
+
+<div id="pipeline-container"><div class="loading">加载中...</div></div>
+
+<script src="/static/pipeline.js"></script>
+</body>
+</html>

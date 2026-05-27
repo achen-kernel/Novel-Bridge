@@ -1,175 +1,85 @@
 package com.achen.novelbridge.server.controller;
 
-import com.achen.novelbridge.common.exception.BaseException;
-import com.achen.novelbridge.common.result.Result;
-import com.achen.novelbridge.server.mapper.BookMapper;
-import com.achen.novelbridge.server.mapper.ChapterMapper;
-import com.achen.novelbridge.pojo.dto.CreateBookRequest;
-import com.achen.novelbridge.pojo.entity.NovelAgentRun;
-import com.achen.novelbridge.pojo.entity.NovelAgentStep;
-import com.achen.novelbridge.pojo.entity.NovelBook;
-import com.achen.novelbridge.pojo.entity.NovelChapter;
-import com.achen.novelbridge.pojo.vo.AgentRunVO;
-import com.achen.novelbridge.pojo.vo.AgentStepVO;
+import com.achen.novelbridge.common.result.R;
+import com.achen.novelbridge.pojo.vo.BookUploadVO;
 import com.achen.novelbridge.pojo.vo.BookVO;
-import com.achen.novelbridge.pojo.vo.ChapterVO;
-import com.achen.novelbridge.server.service.IBookService;
-import com.achen.novelbridge.server.service.IAgentRunService;
-import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.DeleteMapping;
+import com.achen.novelbridge.server.service.BookService;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-
+/**
+ * REST controller for book upload and retrieval endpoints.
+ * <p>
+ * Stage 2: Book upload with encoding detection, hash dedup, and async Python processing trigger.
+ * </p>
+ *
+ * @NB-ENTRYPOINT
+ * @NB-ROADMAP
+ */
 @RestController
 @RequestMapping("/api/books")
 public class BookController {
 
-    private final IBookService bookService;
-    private final BookMapper bookMapper;
-    private final ChapterMapper chapterMapper;
-    private final IAgentRunService agentRunService;
+    private final BookService bookService;
 
-    public BookController(IBookService bookService, BookMapper bookMapper,
-                          ChapterMapper chapterMapper, IAgentRunService agentRunService) {
+    public BookController(BookService bookService) {
         this.bookService = bookService;
-        this.bookMapper = bookMapper;
-        this.chapterMapper = chapterMapper;
-        this.agentRunService = agentRunService;
     }
 
     /**
-     * Step 1: Create a Book record. The file is NOT split yet.
-     * Status = IMPORTED.
+     * Upload one or more TXT book files merged into a single book.
+     * <p>
+     * Accepts multipart form data with multiple files and optional metadata.
+     * Files are concatenated in order with a double newline separator.
+     * </p>
+     *
+     * @param files    the uploaded TXT files (required, at least one)
+     * @param encoding optional source encoding hint (auto-detected if omitted)
+     * @param title    optional book title (inferred from first filename if omitted)
+     * @param author   optional author name
+     * @return upload result with book ID and processing status
      */
-    @PostMapping
-    public Result<BookVO> createBook(@Valid @RequestBody CreateBookRequest request) {
-        NovelBook book = bookService.createBook(request.getFilePath());
-        return Result.success(toVO(book));
-    }
-
-    /**
-     * Step 2: Split the book file into chapters and save them.
-     * Status: BUILDING -> READY_FOR_QA (or BUILD_FAILED).
-     */
-    @PostMapping("/{bookId}/build")
-    public Result<BookVO> buildBook(@PathVariable Long bookId) {
-        NovelBook book = bookService.buildBook(bookId);
-        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
-        return Result.success(toVO(book, chapters));
-    }
-
-    /**
-     * View a book with its chapters.
-     */
-    @GetMapping("/{bookId}")
-    public Result<BookVO> getBook(@PathVariable Long bookId) {
-        NovelBook book = bookMapper.findById(bookId);
-        if (book == null) {
-            throw new BaseException("Book not found: " + bookId);
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<BookUploadVO> upload(
+            @RequestParam("files") MultipartFile[] files,
+            @RequestParam(value = "encoding", required = false) String encoding,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "author", required = false) String author
+    ) {
+        if (files == null || files.length == 0) {
+            return R.failed(400, "At least one file is required");
         }
-        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(bookId);
-        return Result.success(toVO(book, chapters));
+        BookUploadVO result = bookService.uploadBook(files, encoding, title, author);
+        return R.ok(result);
     }
 
     /**
-     * List all books (for the frontend sidebar).
+     * Get book details by ID.
+     *
+     * @param id book ID
+     * @return book details
      */
-    @GetMapping
-    public Result<List<BookVO>> listBooks() {
-        List<NovelBook> books = bookService.listBooks();
-        List<BookVO> result = books.stream()
-                .map(b -> BookVO.builder()
-                        .id(b.getId())
-                        .title(b.getTitle())
-                        .status(b.getStatus())
-                        .totalChapters(b.getTotalChapters())
-                        .errorMessage(b.getErrorMessage())
-                        .createdAt(b.getCreatedAt())
-                        .build())
-                .toList();
-        return Result.success(result);
+    @GetMapping("/{id}")
+    public R<BookVO> getBook(@PathVariable Long id) {
+        BookVO book = bookService.getBook(id);
+        return R.ok(book);
     }
 
     /**
-     * Delete a book and all related data.
+     * Get book processing status by ID.
+     *
+     * @param id book ID
+     * @return book status details
      */
-    @DeleteMapping("/{bookId}")
-    public Result<Void> deleteBook(@PathVariable Long bookId) {
-        bookService.deleteBook(bookId);
-        return Result.success();
-    }
-
-    /**
-     * View all build runs for a book (with step details).
-     */
-    @GetMapping("/{bookId}/runs")
-    public Result<List<AgentRunVO>> getRuns(@PathVariable Long bookId) {
-        List<NovelAgentRun> runs = agentRunService.getRunsByBookId(bookId);
-        List<AgentRunVO> result = runs.stream().map(this::toRunVO).toList();
-        return Result.success(result);
-    }
-
-    // -- helper --
-
-    private BookVO toVO(NovelBook book) {
-        List<NovelChapter> chapters = chapterMapper.findByBookIdOrderByChapterNumber(book.getId());
-        return toVO(book, chapters);
-    }
-
-    private BookVO toVO(NovelBook book, List<NovelChapter> chapters) {
-        return BookVO.builder()
-                .id(book.getId())
-                .title(book.getTitle())
-                .author(book.getAuthor())
-                .sourceFilename(book.getSourceFilename())
-                .fileType(book.getFileType())
-                .fileSize(book.getFileSize())
-                .totalChapters(book.getTotalChapters())
-                .status(book.getStatus())
-                .errorMessage(book.getErrorMessage())
-                .createdAt(book.getCreatedAt())
-                .chapters(chapters.stream().map(this::toChapterVO).toList())
-                .build();
-    }
-
-    private ChapterVO toChapterVO(NovelChapter ch) {
-        return ChapterVO.builder()
-                .id(ch.getId())
-                .chapterNumber(ch.getChapterNumber())
-                .title(ch.getTitle())
-                .charCount(ch.getCharCount())
-                .build();
-    }
-
-    private AgentRunVO toRunVO(NovelAgentRun run) {
-        List<NovelAgentStep> steps = agentRunService.getStepsByRunId(run.getId());
-        return AgentRunVO.builder()
-                .id(run.getId())
-                .runType(run.getRunType())
-                .bookId(run.getBookId())
-                .status(run.getStatus())
-                .startedAt(run.getStartedAt())
-                .completedAt(run.getCompletedAt())
-                .errorMessage(run.getErrorMessage())
-                .steps(steps.stream().map(this::toStepVO).toList())
-                .build();
-    }
-
-    private AgentStepVO toStepVO(NovelAgentStep step) {
-        return AgentStepVO.builder()
-                .id(step.getId())
-                .stepType(step.getStepType())
-                .stepOrder(step.getStepOrder())
-                .status(step.getStatus())
-                .startedAt(step.getStartedAt())
-                .completedAt(step.getCompletedAt())
-                .errorMessage(step.getErrorMessage())
-                .build();
+    @GetMapping("/{id}/status")
+    public R<BookVO> getBookStatus(@PathVariable Long id) {
+        BookVO book = bookService.getBook(id);
+        return R.ok(book);
     }
 }

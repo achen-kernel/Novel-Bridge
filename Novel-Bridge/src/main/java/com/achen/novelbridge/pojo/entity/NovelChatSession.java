@@ -1,15 +1,26 @@
 package com.achen.novelbridge.pojo.entity;
 
-import com.achen.novelbridge.common.base.BaseEntity;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Data;
 
-@Getter
-@Setter
-public class NovelChatSession extends BaseEntity {
+import java.time.LocalDateTime;
+
+/**
+ * Chat session for reading QA.
+ *
+ * @NB-DATA-WRITE
+ */
+@Data
+public class NovelChatSession {
+
+    private Long id;
 
     private Long bookId;
-    private Long userId;
+
     private String title;
+
     private String status;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
 }

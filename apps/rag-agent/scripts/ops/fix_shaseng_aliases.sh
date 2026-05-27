@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -u"${MYSQL_USER:-novel_bridge}" -p"${MYSQL_PASSWORD}" novel_bridge --default-character-set=utf8mb4 -e "UPDATE novel_entity_profile SET aliases_json = '[\"流沙河\",\"沙僧\",\"沙和尚\",\"卷帘大将\"]' WHERE book_id = 6 AND canonical_name = '沙悟净';"

@@ -13,3 +13,20 @@
 | 2026-05-15 | demo-3-chat | skill 的架构约定偏 Java/Spring Boot，其他语言不好复用 | SKILL.md 的 Common module conventions 未标注技术栈范围 | 在 conventions 和 IDE support 章节添加 Technology note 说明适用范围 | 用户主动提出"能不能更通用" | medium |
 | 2026-05-16 | demo-5-planning | Demo 5 范围扩张到远程部署、LLM、GBNF、Neo4j、向量库、QA、微调 | skill 只有 demo-first 口号，但缺少“何时必须拆 demo”的执行规则；closing 脚本把 `@VTL-PRACTICE` 当硬门槛，容易误导 agent 在部署/Prompt/GBNF 阶段硬找练习代码；AGENTS/current-stage 仍停在旧阶段，新 agent 容易按旧目标开工 | `SKILL.md` 新增 Scope Slicing Rule；Default Loop 改成 Practice decision；`vtl_closing.py` 支持 marker 或 `SKIP-PRACTICE`；`demo-plan.md` 拆为 Demo 5A/5B/6/7；`current-stage.md` 和 `vtl-state.json` 同步到 demo-5a；`AGENTS.md` 加入 secrets 规则和 Demo 5 需求文档入口 | 用户反馈“甚至可以拆分成 demo5/6 等”；用户认为伴学 skill 的重点应转向 vibe 工作流和项目能力，而不是练习代码；Demo 5 文档已包含完整平台范围，存在 scope creep 风险 | high |
 | 2026-05-16 | demo-5a-remote-foundation | 项目开始引入 `rag-agent`、LLM 调用、Chroma、部署脚本等 Python 工作，但 skill 仍主要按 Java 学习项目表达 | 新手在 vibe coding 时代除了 Java 后端，也需要通过真实项目锻炼 Python 服务、数据处理、模型调用和脚本化能力；原 skill 没有明确提示 agent 捕捉这些 Python 学习机会 | `SKILL.md` 新增 Python Learning Lane；Practice decision 扩展为 Java/Python；practice 候选加入 typed schema、service call、parsing、chunking、extraction、vector-store、evaluation harness；`openai.yaml` 同步 Java/Python practice 表述 | 用户明确要求“在我这个agent开发的学习中，锻炼Python开发能力” | high |
+# vtl-feedback-log.md
+
+## 2026-05-19 — Replace practice workflow with stage harness
+
+Evidence:
+- NovelBridge is no longer a beginner Java practice project.
+- The new reboot needs AI reading-agent architecture, Java/Python service boundaries, model-call tracing, evidence validation, and deployment quality gates.
+- Practice snapshots and `@VTL-PRACTICE` markers would distract from the main project route.
+
+Decision:
+- `vibe-learn` should become a stage harness with route markers and pitfall guards.
+- Closing checklist should verify stage docs and project memory, not practice markers.
+
+Implemented:
+- Rewrote `.opencode/skills/vibe-learn/SKILL.md`.
+- Rewrote `vtl_closing.py`.
+- Added `docs/learn/route-markers.md`.

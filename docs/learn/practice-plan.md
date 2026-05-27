@@ -18,6 +18,8 @@
 |---|---|---|
 | demo-5a-remote-foundation | SKIP-PRACTICE：远程 Linux 部署、一键启动、端口和 health check 属于工作流/运维闭环，不适合生成 Java TODO 练习 | 在 retro/playbook 中沉淀远程部署和服务编排规则 |
 | demo-5b-entity-extraction | SKIP-PRACTICE：优先跑通 GBNF、schema validate、model_run、candidate/review 闭环；等实体抽取代码稳定后再挑选高价值方法 | Demo 6 前回看 rag-agent validator 或 review service 是否适合标记 |
+| demo-6-neo4j-review-overview | SKIP-PRACTICE：Neo4j 只读查询/审核 API 包装/BookOverview 业务逻辑属于基础设施 API 层，主要是 HTTP 代理和简单状态管理，不适合生成独立练习 | 在 retro-log 中沉淀 Neo4j 驱动版本踩坑和 Jackson 3.x 注意点 |
+| demo-6-schema-simplify | SKIP-PRACTICE：删除 25 个旧文件 + 简化 BookSource 实体主要是清理债务，不适合生成练习 | 在 retro-log 中记录 schema 简化决策和远端 audit 列缺失的踩坑 |
 
 ## 练习标记
 

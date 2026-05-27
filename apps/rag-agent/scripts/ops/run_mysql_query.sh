@@ -1,0 +1,1 @@
+docker exec -i novelbridge-mysql mysql -uroot -p"${MYSQL_PASSWORD}" -e "SELECT user, host FROM mysql.user;" 2>&1

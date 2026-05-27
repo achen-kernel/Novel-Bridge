@@ -1,49 +1,37 @@
 #!/usr/bin/env bash
-# ============================================================
-# NovelBridge — 远程一键停止
-# 逆序停止所有服务。
-# 用法: bash deploy/remote/nb_down.sh
-# ============================================================
-
+# NovelBridge 一键停止脚本
+# 用法: ./nb_down.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [[ -f ports.env ]]; then
-  set -a
-  source ports.env
-  set +a
+# 加载环境变量
+if [ -f .env ]; then
+    set -a; source .env; set +a
+fi
+if [ -f ports.env ]; then
+    set -a; source ports.env; set +a
 fi
 
-if [[ -f .env ]]; then
-  set -a
-  source .env
-  set +a
+echo "[INFO] 停止 llama-server 9B + embedding..."
+"${SCRIPT_DIR}/stop_llama.sh"
+
+echo "[INFO] 停止 rag-agent..."
+if [ -f /tmp/nb_rag_agent.pid ]; then
+    PID=$(cat /tmp/nb_rag_agent.pid)
+    if kill "$PID" 2>/dev/null; then
+        echo "[INFO] 已停止 rag-agent (PID: $PID)"
+    else
+        echo "[WARN] rag-agent (PID: $PID) 未运行"
+    fi
+    rm -f /tmp/nb_rag_agent.pid
 fi
 
-LOG_DIR="${LOG_DIR:-/home/wk/novelbridge/logs}"
-mkdir -p "$LOG_DIR"
+echo "[INFO] 停止 Docker 服务..."
+docker compose down
 
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-}
+echo "[INFO] 清理 PID 文件..."
+rm -f /tmp/nb_llama.pid /tmp/nb_llama_9b.pid /tmp/nb_embedding.pid /tmp/nb_rag_agent.pid
 
-log "=== 停止服务（逆序）==="
-
-# 1. rag-agent
-log "停止 rag-agent..."
-pkill -f "app.main.*--port ${RAG_AGENT_PORT:-18081}" 2>/dev/null && log "rag-agent 已停止" || log "rag-agent 未运行"
-
-# 2. llama-server
-log "停止 llama-server..."
-pkill -f "llama-server.*--port ${LLAMA_PORT:-18080}" 2>/dev/null && log "llama-server 已停止" || log "llama-server 未运行"
-
-# 3. Docker 服务
-log "停止 Neo4j..."
-docker compose down neo4j 2>/dev/null || true
-
-log "停止 MySQL..."
-docker compose down mysql 2>/dev/null || true
-
-log "=== 所有服务已停止 ==="
+echo "[INFO] NovelBridge 已停止"

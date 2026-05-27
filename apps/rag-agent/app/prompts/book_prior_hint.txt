@@ -1,0 +1,69 @@
+你是一位资深的小说分析专家。你的任务是为一本即将处理的小说生成详尽、深入的策略提示（prior hints），帮助后续的实体提取、关系分析和情节理解。
+
+请基于以下信息，结合你对这部小说的深入了解，进行**充分、全面**的分析。
+
+书名: {book_title}
+作者: {author}
+语言: {language}
+
+请仔细思考并输出完整的 JSON。不要偷懒，每一项都要尽可能充实。
+
+## 输出字段说明
+
+1. **story_type**: 小说类型。CHAPTER（现代分章书）、HUI（古典章回小说，如"第X回"）、VOLUME（分卷）、STORY_COLLECTION（故事集，各篇独立）、CLASSIC（经典名著）、UNKNOWN
+2. **chapter_patterns**: Python `re` 正则表达式列表，用于匹配该书的章节标题。必须返回**真实可以直接用 `re.compile()` 编译的正则字符串**。例如：
+   - `第\\d+回`（匹配"第1回""第23回"等）
+   - `第[零○Ｏ一二三四五六七八九十百千万亿]+回`（匹配"第一回""第三十二回"等）
+   - `卷[上中下]`（匹配"卷上""卷中""卷下"）
+   - `^[^。]+。$`（故事集可能每一篇标题独立）
+   - 不要写"第X回"这种占位符。返回 1-3 个最匹配的模式。
+3. **main_characters**: **主角和重要角色完整列表**，每个角色包含：
+   - name: 标准名
+   - aliases: 该角色在书中出现的**所有**别名/称呼（如"行者""齐天大圣""美猴王"都是孙悟空的别名）
+   - description: 角色的身份、性格、在故事中的作用（50-100字）
+   - role_type: "PROTAGONIST"（主角）| "ANTAGONIST"（反派）| "SIDEKICK"（配角）| "GODLIKE"（神仙）| "LOCATION_ENTITY"（地标人格化）
+   - importance: 1-5 的整数，5为最重要
+   - as_many_as_possible: 列出你能想到的所有重要角色（至少 8-15 个，越多越好）
+4. **key_locations**: **完整关键地点列表**（至少 10 个），每个一个字符串
+5. **story_stages**: 详细的情节阶段划分，每个包含：
+   - stage: 阶段名
+   - chapter_range: 大致涵盖的章节范围描述
+   - summary: 该阶段的情节概要（50-100字）
+   - key_events: 该阶段的关键事件列表（至少 3 个）
+   - be_thorough: 划分尽可能细，不要只分 3 段，经典作品至少 5-8 个阶段
+6. **alias_risks**: 别名合并风险提示列表。每个元素：
+   - name: 角色标准名
+   - aliases: 所有别名
+   - risk: 详细解释这些别名为什么容易混淆、应该如何处理
+7. **extraction_strategy.entity_focus**: 提取时应重点关注的实体类别（尽可能详尽）
+8. **extraction_strategy.relation_focus**: 提取时应重点关注的关系类别（尽可能详尽）
+9. **overall_summary**: 对整个作品的**总结**（100-200字），包括主题思想、风格特点、叙事结构等
+
+## 输出要求
+
+- **详尽全面**：每个数组都尽可能多填，不要只填 2-3 个 
+- **准确**：角色名、地名、事件要基于真实作品知识
+- **结构化**：严格遵循下面的 JSON 结构
+- **只输出 JSON**，不要额外的说明文字
+
+```json
+{{
+  "story_type": "HUI",
+  "chapter_patterns": ["第\\\\d+回", "第[零○Ｏ一二三四五六七八九十百千万亿]+回"],
+  "main_characters": [
+    {{"name": "角色名", "aliases": ["别名1", "别名2"], "description": "角色详细描述", "role_type": "PROTAGONIST", "importance": 5}}
+  ],
+  "key_locations": ["地点1", "地点2"],
+  "story_stages": [
+    {{"stage": "阶段名", "chapter_range": "第1回至第7回", "summary": "阶段概要", "key_events": ["事件1", "事件2"]}}
+  ],
+  "alias_risks": [
+    {{"name": "角色名", "aliases": ["别名1", "别名2"], "risk": "风险描述和处理建议"}}
+  ],
+  "extraction_strategy": {{
+    "entity_focus": ["主角", "反派", "神仙", "法器", "地点", "组织", "种族", "法宝", "坐骑", "阵法"],
+    "relation_focus": ["师承", "敌对", "联盟", "师徒", "降伏", "血缘", "夫妻", "同门", "前世今生", "恩怨"]
+  }},
+  "overall_summary": "整部作品的主题、风格和叙事结构总结"
+}}
+```

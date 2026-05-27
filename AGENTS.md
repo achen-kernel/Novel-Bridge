@@ -1,79 +1,106 @@
-# NovelBridge Agent Start
+# NovelBridge
 
-Use this file as the first entry point for a fresh coding agent.
-
-## Read First
-
-1. `.opencode/skills/vibe-learn/SKILL.md`
-2. `.vtl/vtl-adapter.json`
-3. `docs/learn/vtl-state.json`
-4. `docs/learn/current-stage.md`
-5. `docs/learn/project-skeleton.md`
-6. `docs/learn/demo-plan.md`
-7. `novel_bridge_demo_5_gbnf_开发需求文档_v_0_1.md`
-8. `docs/learn/remote-server-structure.md`
-9. `docs/learn/table-design-review.md`
-10. `docs/learn/table-design.md`
-
-Do not read old planning drafts unless the user explicitly asks; the project has been simplified around a demo-first loop.
-
-Do not read files under `docs/private/` unless the user explicitly asks. That folder is ignored by git and is reserved for user-specific long-context handoff notes.
-
-## Current Direction
-
-Build a small working NovelBridge demo first, then harden it.
-
-The project is now entering Demo 5, but Demo 5 is split to avoid scope creep:
+**API-first novel reading and authoring analysis agent.**
 
 ```text
-Demo 5A -> remote Linux service foundation
-Demo 5B -> chunk + model_run + entity extraction candidate + review
-Demo 6  -> relation/event/claim extraction and graph hardening
-Demo 7  -> GraphRAG QA, evaluation, fine-tuning data preparation
+Book → Chapter → Chunk → ChapterFact → Evidence/Citation
+     → Entity Governance → Retrieval QA → Narrative Graph → Audit/Dataset
 ```
 
-Do not implement full GraphRAG, wiki alignment, relation/event/claim extraction, QA, and fine-tuning inside Demo 5A/5B.
+## Project Structure
 
-## Repository Shape
+```text
+Novel-Bridge/
+├── apps/rag-agent/              # Python FastAPI backend (active)
+│   ├── app/
+│   │   ├── api/                 HTTP routes
+│   │   ├── pipeline/            Preprocessing P1-P8
+│   │   ├── qa/                  QA engine
+│   │   ├── eval/                Evaluation system
+│   │   ├── quality/             Quality workflow
+│   │   ├── agent_runtime/       Agent state/tool contracts
+│   │   ├── clients/             External service clients
+│   │   ├── stores/              Data access layer
+│   │   └── static/              Frontend HTML/CSS/JS
+│   └── scripts/                 Ad-hoc scripts
+├── deploy/remote/               Docker deployment
+├── Novel-Bridge/                Java Spring Boot API shell (secondary)
+└── docs/                        Architecture docs
+```
 
-- Backend root: `Novel-Bridge`
-- Learning docs: `docs/learn`
-- Project skill: `.opencode/skills/vibe-learn`
-- Project adapter: `.vtl/vtl-adapter.json`
+## Service Architecture
+
+| Service | Access | Port |
+|---------|--------|------|
+| MySQL | localhost via SSH tunnel | 13306 |
+| Qdrant (vector DB) | localhost via SSH tunnel | 16333 |
+| Neo4j (graph) | localhost via SSH tunnel | 17474 / 17687 |
+| llama-server (9B) | localhost via SSH tunnel | 18080 |
+| Embedding | localhost via SSH tunnel | 18082 |
+| DeepSeek API | direct (API key) | — |
+
+All services connect to `127.0.0.1` via SSH tunnels to the remote server.
+Configure connection parameters in the `/config` UI or `novel_bridge_config.json`.
+
+## Quick Start
+
+```powershell
+# 1. Create config
+python D:\Novel-Bridge\manage_server.py start
+
+# 2. Open browser
+#    http://127.0.0.1:18079/demo
+
+# 3. Configure services in /config page
+
+# Stop
+python D:\Novel-Bridge\manage_server.py stop
+```
+
+## Service Responsibilities
+
+| Layer | Responsibility |
+|---|---|
+| Python FastAPI | Text processing, model calls, extraction, QA, retrieval indexing, quality |
+| Java Spring Boot | Product API shell (compile-ready, secondary) |
+| MySQL | Source-of-truth for all structured data |
+| Qdrant | Vector retrieval (Qwen3-Embedding-0.6B, 1024-dim) |
+| Neo4j | Optional narrative graph projection |
+
+## Model & Retrieval Decisions
+
+| Component | Decision |
+|---|---|
+| DeepSeek API | Prior hints, audit/review, alias safety, risky fact validation |
+| Local 9B | Bulk extraction, ChapterFact draft, JSON repair, low-cost candidates |
+| Embedding | `Qwen/Qwen3-Embedding-0.6B`, 1024 dimensions, cosine |
+| Vector DB | Qdrant (default port 16333) |
+| RAG | Evidence-first Hybrid RAG (lexical + dense + structured) |
+
+## Hard Rules
+
+- UTF-8 internally, `utf8mb4` in MySQL.
+- No passwords/keys in tracked files. All credentials from environment variables or `novel_bridge_config.json`.
+- Model output is candidate data, never truth. Evidence and review decide acceptance.
+- Every model call records prompt, revision, provider, duration, errors.
 
 ## Commands
 
 ```powershell
-python .opencode\skills\vibe-learn\scripts\vtl_status.py --root . --json
-python .opencode\skills\vibe-learn\scripts\vtl_scan.py --root . --json
+# Python backend (local dev)
+cd apps\rag-agent
+python -m uvicorn app.main:app --reload --port 18081
+
+# Java build
 cd Novel-Bridge
-mvn -q test
+mvn test
+
+# Server management
+python manage_server.py start      # SSH tunnel + uvicorn
+python manage_server.py stop       # Stop both
+python manage_server.py status     # Server + tunnel health
 ```
 
-## Hard Rules
+## Configuration
 
-- Keep demo slices small and verifiable.
-- Mark mock or temporary behavior explicitly.
-- Do not skip `AgentRun/AgentStep` for long-running build/query flows.
-- Do not call question answering complete without `Citation`.
-- Update `.vtl/vtl-adapter.json` when frontend or rag-service roots are created.
-- Do not write server passwords, database passwords, Neo4j passwords, or API tokens into tracked files.
-- Remote Linux deployment details belong in `.env`/local config; tracked docs may show host/user/port but not secrets.
-- Server environment pitfalls, config records, and deployment-specific notes go in `docs/personal-notes/`. New agents doing server operations should read these before making changes.
-- Project-specific records (`server-setup-pitfalls.md`, `personal-vibecoding-playbook.md`) are **not** standard vibe-learn docs — they belong in `docs/personal-notes/`, not `docs/learn/`.
-
-## Vibe-Learn Closing Checklist
-
-After every demo cycle reaches Evidence/Verify, **do not consider it done** until the script confirms all items are GREEN.
-
-```powershell
-python .opencode\skills\vibe-learn\scripts\vtl_closing.py --root . --json
-```
-
-If any item is RED:
-- **practice_decision**: Add `@VTL-PRACTICE` to methods with genuine learning value, or document `SKIP-PRACTICE` in `docs/learn/practice-plan.md`.
-- **retro_log**: Update `docs/learn/retro-log.md` with bugs, agent drift, and decisions from this cycle.
-- **playbook**: Update `docs/learn/personal-vibecoding-playbook.md` if a new reusable rule emerged.
-- **feedback_log**: Log skill-level blockers in `docs/learn/vtl-feedback-log.md`.
-
-See `.opencode/skills/vibe-learn/SKILL.md > Closing Checklist` for details.
+All service connections are configured via the `/config` UI page or by editing `novel_bridge_config.json` directly. See [docs/](docs/) for the full architecture documentation.
