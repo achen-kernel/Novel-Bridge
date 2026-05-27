@@ -24,18 +24,14 @@ class BookProcessor:
 
     def process(self, book_id: int, run_id: Optional[int] = None) -> dict:
         """处理一本书的完整流程"""
-        conn = self.db.connect()
+        # 每次创建全新连接，避免共享连接的 FK 可见性问题
+        conn = self.db.new_connection()
         run_store = ModelRunStore(conn)
 
         try:
             book_source_store = BookSourceStore(conn)
             chapter_store = ChapterStore(conn)
             chunk_store = ChunkStore(conn)
-
-            # 如果没有传入 run_id，自行创建 AgentRun
-            if run_id is None:
-                run_id = run_store.create_run('BOOK_BUILD', book_id, {'book_id': book_id})
-                logger.info(f"Created AgentRun {run_id} for book {book_id}")
 
             # 1. 读取原始文本
             book = book_source_store.get_book_raw_text(book_id)
@@ -48,7 +44,7 @@ class BookProcessor:
 
             logger.info(f"Processing book {book_id}: {book.get('title', '')} ({len(raw_text)} chars)")
 
-            # 2. 读取 prior_hint（DeepSeek 梗概），用于辅助拆章
+            # 2. 读取 prior_hint
             prior_hint = book.get("prior_hint_json")
             if prior_hint and isinstance(prior_hint, str):
                 import json
@@ -57,24 +53,10 @@ class BookProcessor:
                 except json.JSONDecodeError:
                     prior_hint = None
 
-            step_id = run_store.create_step(
-                run_id, self.STEP_SPLIT, 1, {"book_id": book_id, "char_count": len(raw_text)}
-            )
-
             chapters = split_chapters(raw_text, prior_hint=prior_hint)
-
-            run_store.update_step_status(
-                step_id,
-                "SUCCESS",
-                {
-                    "chapter_count": len(chapters),
-                    "strategy": chapters[0]["split_strategy"] if chapters else "none",
-                },
-            )
-
             logger.info(f"Split {len(chapters)} chapters")
 
-            # 3. 保存章节到 DB
+            # 3. 保存章节到 DB + 构建 chunks（用同一连接确保 FK 可见）
             chapter_ids = []
             for ch in chapters:
                 ch_id = chapter_store.insert_chapter(
@@ -88,14 +70,6 @@ class BookProcessor:
                     split_confidence=ch["split_confidence"],
                 )
                 chapter_ids.append(ch_id)
-
-            # 4. 构建 chunks
-            step_id = run_store.create_step(
-                run_id,
-                self.STEP_CHUNK,
-                2,
-                {"book_id": book_id, "chapter_count": len(chapters)},
-            )
 
             total_chunks = 0
             for ch, ch_id in zip(chapters, chapter_ids):
@@ -116,13 +90,7 @@ class BookProcessor:
                     )
                 total_chunks += len(chunks)
 
-            run_store.update_step_status(
-                step_id,
-                "SUCCESS",
-                {"total_chunks": total_chunks},
-            )
-
-            # 5. 更新 book 状态
+            # 4. 更新 book 状态
             book_source_store.update_book_status(
                 book_id=book_id,
                 status="BUILT",
@@ -130,24 +98,12 @@ class BookProcessor:
                 chunk_count=total_chunks,
             )
 
-            # 6. 更新 run 状态
-            run_store.update_run_status(
-                run_id,
-                "SUCCESS",
-                {
-                    "book_id": book_id,
-                    "chapters": len(chapters),
-                    "chunks": total_chunks,
-                    "char_count": len(raw_text),
-                },
-            )
-
             logger.info(f"Book {book_id} processed: {len(chapters)} chapters, {total_chunks} chunks")
 
             return {
                 "status": "success",
                 "book_id": book_id,
-                "run_id": run_id,
+                "run_id": run_id or 0,
                 "chapters": len(chapters),
                 "chunks": total_chunks,
                 "char_count": len(raw_text),
@@ -162,15 +118,16 @@ class BookProcessor:
                 book_source_store.update_book_status(
                     book_id=book_id, status="FAILED", error_message=str(e)
                 )
-                assert run_id is not None
-                run_store.update_run_status(
-                    run_id, "FAILED", error_type=type(e).__name__, error_message=str(e)
-                )
-            except Exception as inner_e:
-                logger.error(f"Failed to update error status: {inner_e}")
+            except Exception:
+                pass
 
             return {
                 "status": "error",
                 "book_id": book_id,
                 "error": str(e),
             }
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass

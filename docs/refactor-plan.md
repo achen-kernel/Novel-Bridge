@@ -350,6 +350,55 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 **教训**：区分"前端渲染错误"和"后端服务不可用"。JS 崩溃会导致所有后续操作失效，容易掩盖真正的后端状态。
 
+### 4. ON DUPLICATE KEY UPDATE 的 lastrowid 陷阱
+
+**问题**：Pipeline P1 分章后构建 chunks 时外键约束失败（`fk_chunk_chapter`）。
+
+**根因**：
+- `chapter_store.insert_chapter()` 使用 `INSERT ... ON DUPLICATE KEY UPDATE`。当遇到重复 key（已存在的 `(book_id, chapter_number)`），MySQL 执行 UPDATE 而非 INSERT，此时 `cursor.lastrowid` 返回 **0**。
+- 后续 `chunk_store.insert_chunk()` 使用这个 **chapter_id=0** 去插入 `novel_chunk`，触发外键 `fk_chunk_chapter` 约束失败。
+- 触发条件：数据没清干净（旧 chapter 残留）+ upsert 遇到重复 → `lastrowid=0`。
+
+**修复**：
+1. 彻底清理数据时用 `SET FOREIGN_KEY_CHECKS=0` + `DELETE FROM ... WHERE book_id=?` + `SET FOREIGN_KEY_CHECKS=1`
+2. 或者 `ON DUPLICATE KEY UPDATE` 后额外查询一次来获取真实 id：`SELECT id FROM novel_chapter WHERE book_id=? AND chapter_number=?`
+
+**教训**：
+> `ON DUPLICATE KEY UPDATE` 后 `lastrowid` 不可信赖——INSERT 路径返回新 id，UPDATE 路径返回 0。
+> 如果需要后续引用，必须在 upsert 后重新查询获取真实 id。
+
+### 5. MysqlClient 共享连接 + 线程池冲突
+
+**问题**：`BookProcessor.process()` 在 `run_in_executor` 线程池中运行时，MySQL 外键约束间歇性失败。
+
+**根因**：
+- `MysqlClient.connect()` 返回**单例共享连接**。当主线程（处理 HTTP 请求）和线程池线程（执行 P1）同时使用这个连接时，出现竞争条件。
+- 一个线程的游标操作（INSERT）可能被另一个线程的查询干扰，导致 `lastrowid` 混乱或事务隔离问题。
+- 同步执行（去掉 `run_in_executor`）后问题消失。
+
+**修复**：
+- `MysqlClient` 新增 `new_connection()` 方法，每次都返回独立连接。
+- `BookProcessor` 使用 `new_connection()` 并在 `finally` 中 `close()`。
+
+**教训**：
+> MySQL 连接不是线程安全的。线程池任务必须使用独立连接，不能共享主线程的连接。
+
+### 6. 清理脚本不完整导致外键连锁失败
+
+**问题**：清理派生数据的脚本漏了 `novel_agent_run`、`novel_agent_step` 表，导致 P1 创建 AgentRun/Step 时外键约束失败。
+
+**根因**：
+- 首次清理只删了核心数据表（chapter/chunk/fact 等），没删 `novel_agent_run`（558 行）和 `novel_agent_step`（4980 行）。
+- `BookProcessor.create_run()` 插入新 run，但 `create_step()` 引用这个 run 时因某些残留 FK 关系失败。
+
+**修复**：
+- 完整清理脚本按外键依赖顺序删除所有派生表：`agent_step → agent_run → chapter_fact → chunk → chapter → ...`
+- 对于顽固残留，用 `SET FOREIGN_KEY_CHECKS=0` + `DELETE FROM all tables` + `SET FOREIGN_KEY_CHECKS=1`。
+
+**教训**：
+> MySQL 清理必须按外键顺序执行，子表先删、父表后删。
+> 任何遗漏的表都可能因为 FK 约束导致看起来无关的操作失败。
+
 ---
 
 ## 七、关键文件清单

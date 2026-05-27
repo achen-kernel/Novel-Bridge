@@ -151,6 +151,8 @@ async function fullPipeline(bookId){
 async function waitTask(taskId,bookId,phase){
   var btn=document.getElementById('btn-'+bookId+'-'+phase);
   var msg=document.getElementById('msg-'+bookId+'-'+phase);
+  var cancelBtn=document.getElementById('cancel-'+bookId+'-'+phase);
+  if(cancelBtn)cancelBtn.setAttribute('data-task-id',taskId);
   var t0=Date.now();
   for(var i=0;i<600;i++){
     await new Promise(function(r){setTimeout(r,2000)});

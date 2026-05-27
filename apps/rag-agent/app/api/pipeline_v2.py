@@ -64,14 +64,15 @@ async def _run_p1(book_id: int, task_id: str, **_):
     """Split chapters + chunking. Validates output."""
     from app.pipeline.book_processor import BookProcessor
     task_manager.update_progress(task_id, 10, "正在拆分章节...")
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, BookProcessor(db_client).process, book_id, 0)
+    # 直接同步运行（不用线程池），避免 MySQL 连接冲突
+    result = BookProcessor(db_client).process(book_id, 0)
     chapters = result.get('chapters', 0)
     chunks = result.get('chunks', 0)
     if chapters == 0:
         raise phase_failed_error("P1", book_id,
                                  f"P1 产生 0 章节 — 请检查书籍 raw_text 是否存在",
-                                 {"raw_text": result.get('char_count', 0)})
+                                 {"raw_text": result.get('char_count', 0),
+                                  "book_result": result.get('status', 'unknown')})
     task_manager.update_progress(task_id, 100, f"拆分完成: {chapters}章 {chunks}块")
     return result
 
