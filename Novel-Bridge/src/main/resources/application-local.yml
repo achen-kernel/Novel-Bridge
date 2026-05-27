@@ -1,9 +1,0 @@
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/novel_bridge?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai
-    username: root
-    password: ${MYSQL_PASSWORD:novel_bridge}
-
-novelbridge:
-  rag-agent:
-    base-url: http://localhost:18081
