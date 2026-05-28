@@ -188,6 +188,13 @@ class TaskManager:
             self._persist(task)
             logger.error(f"Task failed: {task_id}: [{error_code}] {error}")
 
+    def clear_by_book(self, book_id: int):
+        """Remove all in-memory tasks for a book."""
+        with self._lock:
+            to_remove = [tid for tid, t in self._tasks.items() if t.book_id == book_id]
+            for tid in to_remove:
+                del self._tasks[tid]
+
     def list_by_book(self, book_id: int, phase: str = None) -> list[PipelineTask]:
         with self._lock:
             tasks = [t for t in self._tasks.values() if t.book_id == book_id]

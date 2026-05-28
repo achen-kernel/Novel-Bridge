@@ -3,6 +3,7 @@ var USE_MODEL = false;
 var PHASE_NAMES = {'P1':'分章','P2':'梗概','P3':'提取','P4':'治理','P5':'叙事','P6':'索引','P7':'图谱','P8':'导出'};
 var PHASE_ORDER = ['P1','P2','P3','P4','P5','P6','P7','P8'];
 var BOOKS_DATA = [];
+var _cancelFullPipeline = false;
 
 async function loadPipeline(){
   try{
@@ -106,10 +107,24 @@ function updateBatchBtn(){
   document.getElementById('batchBtn').textContent='批量运行 '+(cbs.length>0?'('+cbs.length+'本)':'');
 }
 
+function cancelFullPipeline(){
+  _cancelFullPipeline = true;
+  var btn = document.getElementById('cancelFullBtn');
+  if(btn)btn.textContent='正在取消...';
+  // Also notify the backend to cancel current phase task
+  var currentPhaseTask = btn ? btn.getAttribute('data-current-task') : null;
+  if(currentPhaseTask){
+    fetch('/api/v2/tasks/'+currentPhaseTask+'/cancel',{method:'POST'}).catch(function(){});
+  }
+}
+
 async function fullPipeline(bookId){
   if(!confirm('将清空本书所有旧数据（数据库+向量+图谱），然后重新执行 P1-P8 全流程。\n原始书籍文本不受影响。确认继续？'))return;
-  var btn=document.getElementById('full-'+bookId);
-  btn.disabled=true;btn.textContent='清理中...';
+  _cancelFullPipeline = false;
+  var fullBtn=document.getElementById('full-'+bookId);
+  var cancelBtn=document.getElementById('cancelFullBtn');
+  fullBtn.disabled=true;fullBtn.textContent='清理中...';
+  if(cancelBtn)cancelBtn.style.display='inline-block';
   // Auto-clean first — check responses
   var clean1=await fetch('/api/v2/books/'+bookId+'/cleanup',{method:'POST'});
   var clean2=await fetch('/api/v2/books/'+bookId+'/cleanup/qdrant',{method:'POST'});
@@ -117,17 +132,38 @@ async function fullPipeline(bookId){
   var r1=await clean1.json(),r2=await clean2.json(),r3=await clean3.json();
   if(r1.status!=='success'||r2.status!=='success'||r3.status!=='success'){
     alert('清理失败: '+(r1.message||r2.message||r3.message));
-    btn.textContent='全流程';btn.disabled=false;return;
+    fullBtn.textContent='全流程';fullBtn.disabled=false;
+    if(cancelBtn)cancelBtn.style.display='none';
+    _cancelFullPipeline=false;return;
   }
-  btn.textContent='全流程运行中...';
+  fullBtn.textContent='全流程运行中...';
+  // 重置所有阶段为 PENDING，避免旧状态干扰
+  for(var p=0;p<PHASE_ORDER.length;p++){
+    var rpBtn=document.getElementById('btn-'+bookId+'-'+PHASE_ORDER[p]);
+    var rpMsg=document.getElementById('msg-'+bookId+'-'+PHASE_ORDER[p]);
+    var rpCancel=document.getElementById('cancel-'+bookId+'-'+PHASE_ORDER[p]);
+    if(rpBtn)rpBtn.className='phase-btn pending';
+    if(rpMsg)rpMsg.textContent='排队中...';
+    if(rpCancel)rpCancel.style.display='none';
+  }
+  // 清理后端该书的 pipeline 任务记录
+  fetch('/api/v2/books/'+bookId+'/tasks',{method:'DELETE'}).catch(function(){});
   var useM = document.querySelector('.model-cb[value="'+bookId+'"]');
   var prov = document.querySelector('.provider-sel[data-book="'+bookId+'"]');
   for(var p=0;p<PHASE_ORDER.length;p++){
+    // Check if user cancelled
+    if(_cancelFullPipeline){
+      for(var x=0;x<PHASE_ORDER.length;x++){
+        var xbtn=document.getElementById('btn-'+bookId+'-'+PHASE_ORDER[x]);
+        if(xbtn&&xbtn.className.indexOf('running')>=0)xbtn.className='phase-btn pending';
+      }
+      break;
+    }
     var phase=PHASE_ORDER[p];
-    var btn2=document.getElementById('btn-'+bookId+'-'+phase);
+    var phaseBtn=document.getElementById('btn-'+bookId+'-'+phase);
     var msg=document.getElementById('msg-'+bookId+'-'+phase);
     var t0=Date.now();
-    btn2.className='phase-btn running';msg.textContent='排队中...';
+    phaseBtn.className='phase-btn running';msg.textContent='排队中...';
     try{
       var r=await fetch('/api/v2/books/'+bookId+'/phase/'+phase,{method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -138,14 +174,18 @@ async function fullPipeline(bookId){
       var data=await r.json();
       if(data.status==='started'){
         msg.textContent='已排队';
+        // Store current task on cancel button for cancellation
+        if(cancelBtn)cancelBtn.setAttribute('data-current-task',data.task_id);
         await waitTask(data.task_id,bookId,phase);
       }
-    }catch(e){msg.textContent='失败';btn2.className='phase-btn failed';break;}
+    }catch(e){msg.textContent='失败';phaseBtn.className='phase-btn failed';break;}
     var elapsed=Math.round((Date.now()-t0)/1000);
     var curMsg=msg.textContent;
     if(curMsg.indexOf('（')===-1)msg.textContent=curMsg+'（'+elapsed+'s）';
   }
-  btn.textContent='全流程';btn.disabled=false;
+  fullBtn.textContent='全流程';fullBtn.disabled=false;
+  if(cancelBtn){cancelBtn.style.display='none';cancelBtn.textContent='✕ 取消全流程';cancelBtn.removeAttribute('data-current-task');}
+  _cancelFullPipeline=false;
   loadPipeline();
 }
 async function waitTask(taskId,bookId,phase){
@@ -156,6 +196,15 @@ async function waitTask(taskId,bookId,phase){
   var t0=Date.now();
   for(var i=0;i<600;i++){
     await new Promise(function(r){setTimeout(r,2000)});
+    // Check if full pipeline was cancelled
+    if(_cancelFullPipeline){
+      // Cancel this phase task
+      fetch('/api/v2/tasks/'+taskId+'/cancel',{method:'POST'}).catch(function(){});
+      if(cancelBtn)cancelBtn.style.display='none';
+      msg.textContent='已取消（全流程终止）';
+      btn.className='phase-btn pending';
+      return 'CANCELLED';
+    }
     try{
       var rx=await fetch('/api/v2/tasks/'+taskId);
       var t=await rx.json();

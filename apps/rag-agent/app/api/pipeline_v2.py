@@ -300,6 +300,21 @@ async def list_book_tasks(book_id: int, phase: str = None):
     return {"book_id": book_id, "tasks": [t.to_dict() for t in tasks]}
 
 
+@router.delete("/books/{book_id}/tasks")
+async def clear_book_tasks(book_id: int):
+    """清除某本书的所有 pipeline 任务（用于全流程开始时重置状态）。"""
+    task_manager.clear_by_book(book_id)
+    # 同时清理 MySQL 中的持久化任务
+    try:
+        conn = _conn()
+        with conn.cursor() as c:
+            c.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s", (book_id,))
+        conn.commit()
+    except Exception:
+        pass
+    return {"status": "ok", "book_id": book_id}
+
+
 @router.get("/pipeline/books")
 async def get_pipeline_books():
     """Get all books with latest task status for each phase."""
