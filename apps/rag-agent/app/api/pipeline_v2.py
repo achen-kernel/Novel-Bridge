@@ -326,18 +326,30 @@ async def get_pipeline_books():
     result = []
     for b in books:
         bid = b["id"]
+        # 检测该书是否有正在运行的任务（流水线活动中）
+        has_running = any(
+            t.status == TaskStatus.RUNNING
+            for phase_name in PHASE_RUNNERS
+            for t in task_manager.list_by_book(bid, phase=phase_name)
+        )
         phases = {}
         for phase_name in PHASE_RUNNERS:
             tasks_list = task_manager.list_by_book(bid, phase=phase_name)
             if tasks_list:
                 latest = tasks_list[0]
-                phases[phase_name] = {
-                    "latest_status": latest.status.value,
-                    "latest_progress": latest.progress,
-                    "latest_task_id": latest.task_id,
-                    "latest_error": latest.error[:200] if latest.error else "",
-                    "tasks": [t.to_dict() for t in tasks_list[:3]],
-                }
+                # 如果该书有任务正在运行，且该阶段不是当前运行阶段，
+                # 并且最新任务不是 RUNNING 状态 → 视为旧任务，显示 PENDING
+                if has_running and latest.status != TaskStatus.RUNNING:
+                    phases[phase_name] = {"latest_status": "PENDING", "latest_progress": 0,
+                                           "latest_task_id": "", "latest_error": ""}
+                else:
+                    phases[phase_name] = {
+                        "latest_status": latest.status.value,
+                        "latest_progress": latest.progress,
+                        "latest_task_id": latest.task_id,
+                        "latest_error": latest.error[:200] if latest.error else "",
+                        "tasks": [t.to_dict() for t in tasks_list[:3]],
+                    }
             else:
                 phases[phase_name] = {"latest_status": "PENDING", "latest_progress": 0,
                                        "latest_task_id": "", "latest_error": ""}
@@ -375,6 +387,9 @@ async def cleanup_book(book_id: int):
                 cur.execute(f"DELETE FROM {t} WHERE book_id = %s", (book_id,))
                 total += cur.rowcount
             cur.execute("UPDATE novel_book SET status='IMPORTED', chapter_count=0, chunk_count=0 WHERE id = %s", (book_id,))
+        # 清理 pipeline task 记录
+        task_manager.clear_by_book(book_id)
+        cur.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s", (book_id,))
         conn.commit()
         logger.info(f"Cleaned book {book_id}: {total} rows")
         return CleanupResponse(status="success", message=f"已清理 {total} 条数据")
