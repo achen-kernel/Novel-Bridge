@@ -301,9 +301,112 @@ def restart():
     start()
 
 
+def restart_remote():
+    """SSH into remote server and restart llama + embedding services."""
+    ssh = _load_ssh_config()
+    host = ssh.get("host", "192.168.3.50")
+    user = ssh.get("user", "wk")
+    port = ssh.get("port", 22)
+    remote_project = "/home/wk/novelbridge"  # remote project root
+    remote_deploy = f"{remote_project}/deploy/remote"
+
+    ssh_base = ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=accept-new",
+                "-p", str(port), f"{user}@{host}"]
+
+    print(f"Connecting to {user}@{host}:{port} ...")
+
+    # 1. Check current state
+    try:
+        r = subprocess.run(
+            ssh_base + ["ps aux | grep -c '[l]lama-server' 2>/dev/null || echo 0"],
+            capture_output=True, text=True, timeout=10,
+        )
+        llama_running = r.stdout.strip()
+        r = subprocess.run(
+            ssh_base + ["ps aux | grep -c '[e]mbedding' 2>/dev/null || echo 0"],
+            capture_output=True, text=True, timeout=10,
+        )
+        embed_running = r.stdout.strip()
+        print(f"  llama-server: {'🟢 running' if llama_running != '0' else '🔴 down'}")
+        print(f"  embedding:    {'🟢 running' if embed_running != '0' else '🔴 down'}")
+    except Exception as e:
+        print(f"  SSH check failed: {e}")
+        return False
+
+    # 2. Kill existing processes
+    print("\nStopping old processes...")
+    try:
+        subprocess.run(ssh_base + [f"bash {remote_deploy}/stop_llama.sh"],
+                       capture_output=True, timeout=15)
+        print("  llama-server: stopped")
+    except Exception as e:
+        print(f"  llama-server stop: {e}")
+    try:
+        subprocess.run(ssh_base + ["pkill -f 'llama-embedding' 2>/dev/null; pkill -f 'embedding' 2>/dev/null || true"],
+                       capture_output=True, timeout=10)
+        print("  embedding: stopped")
+    except Exception:
+        pass
+
+    time.sleep(2)
+
+    # 3. Start llama-server (capture_output=False avoids gbk encoding errors)
+    print("\nStarting llama-server ...")
+    try:
+        subprocess.run(
+            ssh_base + [f"bash {remote_deploy}/start_llama_9b.sh"],
+            timeout=120,
+        )
+        print("  llama-server: start command sent")
+    except subprocess.TimeoutExpired:
+        print("  llama-server: start command timed out (may still be starting)")
+    except Exception as e:
+        print(f"  llama-server: {e}")
+
+    # 4. Start embedding
+    print("\nStarting embedding server ...")
+    try:
+        subprocess.run(
+            ssh_base + [f"bash {remote_deploy}/start_embedding.sh"],
+            timeout=120,
+        )
+        print("  embedding: start command sent")
+    except subprocess.TimeoutExpired:
+        print("  embedding: start command timed out (may still be starting)")
+    except Exception as e:
+        print(f"  embedding: {e}")
+
+    # 5. Verify
+    print("\nWaiting for services (up to 30s)...")
+    for i in range(15):
+        time.sleep(2)
+        tunnel = _check_tunnel()
+        llama_ok = tunnel.get("llama", False)
+        embed_ok = tunnel.get("embedding", False)
+        print(f"  [{i*2+2}s] llama={'🟢' if llama_ok else '🔴'} embedding={'🟢' if embed_ok else '🔴'}", end="\r")
+        if llama_ok and embed_ok:
+            print(f"\n  ✅ Both services up after {(i+1)*2}s")
+            return True
+
+    print("\n\nFinal status:")
+    tunnel = _check_tunnel()
+    all_ok = True
+    for name, ok in tunnel.items():
+        icon = "🟢" if ok else "🔴"
+        if name in ("llama", "embedding"):
+            all_ok = all_ok and ok
+            print(f"  {icon} {name:12s}  {'OK' if ok else 'DOWN'}")
+    print()
+    if all_ok:
+        print("✅ Remote services restarted successfully!")
+    else:
+        print("⚠ Some services still down. Check remote server.")
+    return all_ok
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python manage_server.py tunnel|start|stop|restart|status")
+        print("Usage: python manage_server.py tunnel|start|stop|restart|status|restart-remote")
         sys.exit(1)
 
     action = sys.argv[1].lower()
@@ -315,6 +418,8 @@ if __name__ == "__main__":
         stop()
     elif action == "restart":
         restart()
+    elif action == "restart-remote":
+        restart_remote()
     elif action == "status":
         status()
     else:
