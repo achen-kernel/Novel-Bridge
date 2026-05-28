@@ -10,10 +10,13 @@ build/
 venv/
 
 # ===== Java / Maven =====
-Novel-Bridge/target/
+Novel-Bridge/
 *.class
 *.jar
 *.war
+
+# ===== VTL (Java templates) =====
+.vtl/
 
 # ===== Node =====
 node_modules/

@@ -1,2 +1,0 @@
-# dev profile: uses same defaults as application.yml (port 13306, novel_bridge user, password from env)
-# This file exists for future dev-specific overrides
