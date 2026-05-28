@@ -487,6 +487,136 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 ---
 
+### 12. Pipeline 三阶段重构的坑（Phase 0-5）
+
+**背景**：将 P1-P8 平铺的 8 个阶段重构为三阶段（Stage1=P1+P2, Stage2=P3, Stage3=P4-P8），加上逐章 checkpoint、队列调度、前端重写。
+
+**1. 旧 task_manager 残留任务导致状态假死**
+
+**问题**：重启后 Book 6 的 P3 显示 RUNNING，找不到停止按钮，其他服务被阻塞。
+
+**根因**：
+- `task_manager.restore()` 从 `novel_pipeline_task` 表恢复了旧 RUNNING 任务
+- 前端 `computeStageState()` 用 `book.phases`（task_manager 数据）计算阶段状态
+- 旧任务在 task_manager 内存中显示 RUNNING，但实际的 asyncio 协程早就不在了
+- `cancel-hard` 端点只能发信号（event.set()），但没有协程在监听
+
+**修复**：
+- 新增 `pipeline-state/reset` 端点 — 重置任意书的任意阶段状态
+- `cancel-hard` 端点实际写入 cancel event + 标记 CANCELLED
+- 前端 `computeStageState()` 改为优先用 `book.pipeline_state`（新表），降级到 `book.phases`
+- 重启后统一重置所有书的 state：`POST /api/v2/books/{id}/pipeline-state/reset?stage=0`
+
+**教训**：
+> 从 MySQL 恢复旧任务到内存是危险的——旧任务的对象状态不能反映实际运行状态。
+> 新旧架构共存期，前端必须明确区分用哪个数据源，不能混用。
+
+**2. 前端 JS 语法错误导致整个页面白屏**
+
+**问题**：流水线页面显示"加载中..."，控制台报 `Uncaught SyntaxError: Unexpected token '}'` 和 `loadPipeline is not defined`。
+
+**根因**：
+- 通过 `edit` 工具替换 `fullPipelineResume` 函数时，旧代码被部分保留（多出 ~20 行 try/catch 残留）
+- 残留代码含 3 个额外 `}` 和 1 个额外 `(`
+- JS 解析失败 → 所有函数名未注册 → `onclick="loadPipeline()"` 报 `not defined`
+
+**修复**：
+- 用 `node` 脚本扫描大括号平衡性：`Final brace depth: 0, paren depth: 0` 才是干净的
+- 删掉残留的 try/catch 块
+
+**教训**：
+> 用 `edit` 做代码替换时，必须确认 oldString 有足够的上下文来唯一定位。
+> JS 无编译期检查，一个语法错误就会让整个应用白屏。修改后务必做 basic syntax checks。
+
+**3. API_BASE 端口配置不匹配**
+
+**问题**：书库页面显示 "error"，`frontend.py` 的 `_get_json()` 抛异常。
+
+**根因**：
+- `frontend.py:20` 定义 `API_BASE = "http://127.0.0.1:18081"`
+- `manage_server.py` 只启动一个 uvicorn 实例在端口 **18079**
+- `_get_json("/api/books")` 尝试连接 `127.0.0.1:18081`（不存在）→ 超时 → 被 except 捕获显示 error
+- 这个 18081 是远程服务器上另一个 rag-agent 实例的端口（SSH tunnel 转发到远程的 18081），本地开发时不会启动
+
+**修复**：
+- 改 `API_BASE = "http://127.0.0.1:18079"`（和 manage_server.py 一致）
+
+**教训**：
+> 代理调用的目标端口必须和实际启动的服务端口一致。本地开发环境只有一个 uvicorn 进程（18079），不能硬编码远程的 18081。
+> 这种"自调用"架构（frontend 通过 HTTP 调自己的 API）本身就脆弱——一个更好的方案是直接调用 Python 函数而非 HTTP。
+
+**4. 前端使用旧 book.phases 而不是新的 pipeline_state**
+
+**问题**：即使 `pipeline_state` 表里 Status=PENDING，前端阶段二仍然显示 RUNNING（因为 task_manager 里有旧 SUCCESS/CANCELLED 记录）。
+
+**根因**：
+- 设计师写的 `computeStageState()` 使用 `book.phases`（来自 task_manager 的 8 个阶段状态）
+- `pipeline_state` 虽然已经正确返回（PENDING），但前端根本没用这个数据
+
+**修复**：
+- `computeStageState()` 优先读 `book.pipeline_state`，降级到 `book.phases`
+
+**教训**：
+> 前后端数据源必须一一对应。后端新增了 `pipeline_state` 字段但前端没消费它 → 等于没加。
+> 前端在计算阶段状态时应该用后端的阶段级聚合结果，而不是自己从阶段级数据重新计算。
+
+**5. `fullPipelineResume` 使用错误的 enqueue mode**
+
+**问题**：`fullPipelineResume` 调用 `POST /api/v2/pipeline/enqueue` 时传 `mode: 'resume'`，但后端只支持 `full|stage1|stage2|stage3`。
+
+**根因**：
+- 设计师写了 enqueue 调用，但 `mode: 'resume'` 是设计师自己想的一个模式，后端不支持
+- 返回 `d.status === 'queued'` 检查失败（后端返回 `status: 'ok'`）
+- 但代码有 fallback，所以功能勉强可用
+
+**修复**：
+- 去掉 enqueue 调用（单本书连续跑不需要排队），直接按阶段状态判断该跑哪些 phases
+- 用 `pipeline_state` 判断已完成的阶段，跳过
+
+**教训**：
+> 前端和后端的 API 契约必须对齐。新增前端调用前至少要确认后端有没有这个端点/参数。
+> 设计师写的代码需要 review API 调用的正确性。
+
+---
+
+## 六、Pipeline 架构总结（v2 设计）
+
+### 数据流
+
+```
+用户操作 → 前端(pipeline.js) → REST API(pipeline_v2.py)
+                                         │
+                           ┌─────────────┼─────────────┐
+                           ▼             ▼             ▼
+                    PipelineStateStore  TaskManager  Scheduler
+                    (book_pipeline_     (phase-level  (queue +
+                     state + p3_check    task          pipelined
+                     point)             lifecycle)    execution)
+                           │             │             │
+                           ▼             ▼             ▼
+                                    MySQL (novel_book_pipeline_state,
+                                           novel_p3_checkpoint,
+                                           novel_pipeline_task)
+```
+
+### 三阶段生命周期
+
+| 阶段 | 包含 | 数据表 | 模型依赖 | 典型耗时 |
+|------|------|--------|----------|----------|
+| Stage 1 | P1(分章) + P2(梗概) | `novel_chapter`, `novel_chunk` | DeepSeek API(P2) | ~1min |
+| Stage 2 | P3(提取) | `novel_chapter_fact`, `novel_model_call` | 本地 9B(逐 chunk) | ~2-4h/100章 |
+| Stage 3 | P4-P8(治理/叙事/索引/图谱/导出) | `novel_entity_*`, `novel_relation_*`, Qdrant, Neo4j | 本地 9B(P4) | ~5min |
+
+### 失败处理规则
+
+- 单章重试上限：5 次 → 标记永久失败
+- 连续失败阈值：5 章 → 中止整本书
+- 总失败率阈值：>20% → 中止整本书
+- Stage 2 有残留失败 → Stage 3 默认阻塞，用户可「忽略继续」
+- 取消运行中的 Stage 2 → 保留已完成的章，续跑从断点接上
+
+---
+
 ## 七、待办清单
 
 | 优先级 | 任务 | 状态 |
