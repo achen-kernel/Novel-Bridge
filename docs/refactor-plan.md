@@ -399,9 +399,109 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 > MySQL 清理必须按外键顺序执行，子表先删、父表后删。
 > 任何遗漏的表都可能因为 FK 约束导致看起来无关的操作失败。
 
+### 7. Pipeline 状态三层同步问题
+
+**问题**：流水线页面显示"提取还在运行，后面的治理/索引/叙事已完成"的虚假状态。批量运行中途消失。
+
+**根因**：
+- Pipeline 状态维护在**三个独立层**：内存 `task_manager`（Python dict）+ MySQL `novel_pipeline_task` 表 + 前端 UI 轮询。
+- 当新全流程启动时，P1 触发新任务 → P1 显示 RUNNING/SUCCESS，但 P4-P8 还没触发新任务 → 显示**上周旧任务的 SUCCESS**。
+- 清理按钮只清数据不清任务 → `task_manager` 内存中残留旧成功记录。
+- 批量运行（`batchRun`）循环内 `fullPipeline` 未正确处理异常链路，某阶段超时/失败后未正确传递。
+
+**修复**（三个层面）：
+1. **后端 API**：`/api/v2/pipeline/books` 检测到某本书**有任何 RUNNING 任务**时，其他非 RUNNING 阶段全部显示 `PENDING`，不再显示旧 SUCCESS。
+2. **清理联动**：`POST /books/{id}/cleanup` 时同时调用 `task_manager.clear_by_book(book_id)` + 删除 `novel_pipeline_task`。
+3. **全流程前端**：`fullPipeline()` 开始时对所有阶段设为 `排队中...` + 调 `DELETE /books/{id}/tasks`。
+4. **新增取消全流程按钮**：红色按钮，设置 `_cancelFullPipeline=true`，`waitTask` 轮询中检测到后退出。
+
+**教训**：
+> 分布式状态（内存 + DB + 前端）必须有一致的生命周期管理。
+> 清理操作必须清理所有相关状态层，否则残留数据导致误导性 UI。
+> 用户看到的"最新状态"必须结合"是否有任务正在运行"来判断，不能只看最新一条任务记录。
+
+### 8. 前端 Cancel 按钮的 task_id 获取方式
+
+**问题**：全流程运行时每个阶段旁边的 ✕ 取消按钮点了没反应。
+
+**根因**：`cancelTask()` 从 `BOOKS_DATA`（轮询更新的全局变量）读取 `latest_task_id`，但全流程运行期间 `BOOKS_DATA` **不刷新** → `taskId=null`。
+
+**修复**：取消按钮 `<button id="cancel-{bookId}-{phase}">` 上存 `data-task-id` 属性，`pollTask()` / `waitTask()` / `triggerPhase()` 启动时写入，`cancelTask()` 直接从 DOM 读取。
+
+**教训**：
+> 不要依赖异步更新的全局变量来获取关键数据。DOM 属性在事件触发时是同步可读的，更可靠。
+
+### 9. P3 提取极慢（本地 9B 模型）
+
+**问题**：P3（实体/关系/事件提取）在本地 9B 模型上每章耗时约 90-150 秒，搜神记 35 章耗时 **87 分钟**。
+
+**根因**：
+- 每章包含多个 chunk，每个 chunk 都调一次本地 9B 模型
+- 通过 SSH 隧道的 llama-server 延迟较高
+- 35 章 × 多 chunks = 大量串行模型调用
+
+**当前限制**：
+- 默认 `waitTask` 超时 20 分钟（600 次 × 2秒），P3 很容易超时
+- `_run_books.py` 脚本已设为 3 小时超时
+
+**缓解**：
+- 增大 P3 轮询超时到 3 小时
+- `FactPipelineRunner` 每章前 `conn.ping(reconnect=True)` 保持 MySQL 连接
+- 使用独立连接 `new_connection()` + `finally close()`
+
+**注意**：
+> P3 是流水线中最慢的阶段，不是 bug，而是本地模型推理的计算约束。
+> 如果需要加速：使用 DeepSeek API 做提取（更快但更贵），或增加本地 GPU 推理能力。
+
+### 10. 配置保存时密钥被空字符串覆盖
+
+**问题**：配置页面密码框对掩码值显示为 `""`（空），用户没重新输入就保存 → 空字符串覆盖真实 API Key/密码。
+
+**根因**：
+- 前端 GET `/api/config` 返回的密钥是掩码值（如 `sk-****abcd`）
+- 前端密码框检测到 `*` → `displayVal = ""`
+- 用户点保存时未修改 → 传 `api_key: ""` → 后端保存空字符串
+
+**修复**：
+- **后端**：`save_config` 中 `if not value or "*" in str(value)` → 保留旧值
+- **前端**：密码框显示 `•••••••• (已设置)` 占位符提示用户已有值
+
+**教训**：
+> 配置的"读-改-写"流程中，密钥类字段必须特殊处理——前端不能把掩码值发回后端覆盖真实值。
+
+### 11. QA 检索跨书污染
+
+**问题**：问搜神记的问题（"董永和七仙女故事讲了什么？"），QA 返回了西游记的内容。
+
+**根因**（两层）：
+1. **检索层**：`retrieval_runner.py` 的 `hybrid_search()` 在 book_id 过滤无结果时，fallback 到 `book_id=None` 搜所有书 → 从西游记里找到"七仙女"。
+2. **QA 层**：`qa_runner.py` 的 Retrieval Quality Gate 在检索为空时直接返回固定文字（跳过 LLM），而不是让模型用自己的知识回答。
+
+**修复**：
+- **检索层**：移除跨书 fallback，搜不到就返回空。
+- **QA 层**：检索为空时改用 `model_knowledge_prompt` 让 DeepSeek 用自己的知识回答，并注明"（基于模型知识）"。
+
+**教训**：
+> "检索不到当前书的内容" ≠ "去别的书找内容"。跨书搜索的假设是危险的——不同书的实体名可能相同但含义完全不同。
+> LLM 的知识回退比跨书搜索结果更可靠。
+
 ---
 
-## 七、关键文件清单
+## 七、待办清单
+
+| 优先级 | 任务 | 状态 |
+|--------|------|------|
+| 🔴 高 | Pipeline 状态三层同步修复 | ✅ 已修复 |
+| 🔴 高 | Cancel 按钮点击无反应 | ✅ 已修复 |
+| 🔴 高 | P3 超时/连接断开 | ✅ 已缓解（3h 超时 + ping） |
+| 🟡 中 | "清全部"按钮后前端状态不重置 | ❌ 待修复 |
+| 🟡 中 | QA 检索跨书污染 | ✅ 已修复 |
+| 🟡 中 | 空检索 skip LLM → 改走模型知识 | ✅ 已修复 |
+| 🟢 低 | P3 加速（DeepSeek API 提取） | ❌ 待评估 |
+| 🟢 低 | KnowledgePatch 前端审核页面 | ❌ 待开发 |
+| 🟢 低 | Java facade 产品 API 聚合 | ❌ 待开发 |
+
+## 八、关键文件清单
 
 | 文件 | 当前问题 | 重构方向 |
 |------|----------|----------|
