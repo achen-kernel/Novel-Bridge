@@ -7,28 +7,74 @@
 <link rel="stylesheet" href="/static/pipeline.css">
 </head>
 <body>
-<div class="nav"><span class="title">NovelBridge</span><a href="/demo">首页</a><a href="/pipeline">流水线</a><a href="/browse">书库</a><a href="/config">配置</a></div>
+<div class="nav">
+  <span class="nav-title">NovelBridge</span>
+  <a href="/demo">首页</a><a href="/pipeline">流水线</a><a href="/browse">书库</a><a href="/config">配置</a>
+</div>
 
-<h1>NovelBridge 流水线 <small>处理流程 · 后台任务</small></h1>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <h1>NovelBridge 流水线 <small>三层处理 · 后台任务</small></h1>
+    </div>
+  </div>
 
-<div class="upload-area">
-  <h3>上传新书</h3>
-  <div class="upload-form">
-    <input type="text" id="book-title" placeholder="书名" value="">
-    <input type="text" id="book-author" placeholder="作者（可选）" value="">
-    <input type="file" id="book-file" accept=".txt" multiple>
-    <button onclick="uploadBook()">上传</button>
-    <span id="upload-result"></span>
+  <!-- Upload Area -->
+  <div class="upload-area panel">
+    <div class="panel-head"><h2>上传新书</h2></div>
+    <div class="panel-body">
+      <div class="upload-form">
+        <input type="text" id="book-title" placeholder="书名" value="">
+        <input type="text" id="book-author" placeholder="作者（可选）" value="">
+        <input type="file" id="book-file" accept=".txt" multiple>
+        <button onclick="uploadBook()">上传</button>
+        <span id="upload-result"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="tb-btn" onclick="loadPipeline()">&#x21bb; 刷新</button>
+      <button class="tb-btn tb-primary" onclick="batchEnqueue()" id="batchBtn">批量运行选中</button>
+      <button class="tb-btn tb-danger" onclick="cancelFullPipeline()" id="cancelFullBtn" style="display:none">&#x2715; 取消全流程</button>
+    </div>
+    <div class="toolbar-right">
+      <button class="tb-btn" onclick="toggleQueue()" id="queueToggleBtn">
+        &#x1F4CB; 排队状态 <span class="queue-badge" id="queueBadge" style="display:none">0</span>
+      </button>
+      <span class="auto-status" id="auto-status">自动刷新 5s</span>
+    </div>
+  </div>
+
+  <!-- Queue Panel -->
+  <div class="queue-panel panel" id="queuePanel" style="display:none">
+    <div class="panel-head">
+      <h2>&#x1F4CB; 排队中（<span id="queueCount">0</span>本）</h2>
+      <button class="tb-btn tb-sm" onclick="clearQueue()">清空队列</button>
+    </div>
+    <div class="queue-list" id="queueList">
+      <div class="loading-sm">暂无排队任务</div>
+    </div>
+  </div>
+
+  <!-- Books Container -->
+  <div id="pipeline-container">
+    <div class="loading">加载中...</div>
+  </div>
+
+  <!-- Stage 2 Chapter Detail Modal (hidden) -->
+  <div class="modal-overlay" id="chapterModal" style="display:none" onclick="closeChapterModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modalTitle">章节详情</h3>
+        <button class="modal-close" onclick="closeChapterModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
   </div>
 </div>
-
-<div class="bar" style="margin-bottom:14px">
-  <button class="bar-btn" onclick="loadPipeline()">刷新</button>
-  <button class="bar-btn batch" onclick="batchRun()" id="batchBtn">批量运行选中</button>
-  <span style="font-size:12px;color:#607069" id="auto-status">自动刷新 5s</span>
-</div>
-
-<div id="pipeline-container"><div class="loading">加载中...</div></div>
 
 <script src="/static/pipeline.js"></script>
 </body>

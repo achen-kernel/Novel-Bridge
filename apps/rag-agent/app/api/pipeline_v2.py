@@ -1,13 +1,18 @@
 """
-Pipeline v2 API — background tasks, progress tracking, cleanup, parallel books.
+Pipeline v2 API — background tasks, progress tracking, stage/checkpoint/queue.
 
-== Bugs fixed 2026-05-27 ==
-1. P3 KeyError:0 — fetchone() returns dict with DictCursor, [0] fails → use ['COUNT(*)']
-2. P5 NoneType — NarrativeBuilder needs MysqlClient, not raw connection
-3. Default use_model changed to True (model extraction primary, rules fallback)
-4. Added provider selection: "local" (llama-server 9B) or "deepseek" (API)
-5. Added provider support to P3 extraction (FactPipelineRunner + extract_chunk)
-6. Better error handling: each phase runner wraps errors, catches + logs
+Architecture layers (bottom-up):
+  Phase 0: pipeline_state.py      — BookPipelineState + P3Checkpoint store
+  Phase 1: fact_pipeline_runner.py — checkpoint-aware P3 with resume + cancel
+  Phase 2: pipeline_v2.py          — stage gate, force override, stage-level cleanup
+  Phase 3: scheduler.py            — queue + batch pipelined execution
+  Phase 4: pipeline.js/html         — three-stage UI + queue panel
+  Phase 5: extraction_strategy.py   — abstraction for future API mode
+
+Stages:
+  Stage 1 = P1 (分章+分块) + P2 (梗概) — fast, ~1min
+  Stage 2 = P3 (提取)                 — slow, ~2-4h per 100-ch book
+  Stage 3 = P4-P8 (治理/叙事/索引/图谱/导出) — fast, ~5min
 """
 import asyncio
 import json
@@ -20,6 +25,7 @@ from pydantic import BaseModel
 from app.clients.mysql_client import MysqlClient
 from app.clients.neo4j_client import neo4j_client
 from app.pipeline.errors import PipelineError, db_error, model_error, not_found_error, phase_failed_error
+from app.pipeline.pipeline_state import get_state_store, PipelineStateStore, StageStatus
 from app.pipeline.task_manager import TaskStatus, task_manager
 
 logger = logging.getLogger(__name__)
@@ -27,11 +33,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v2", tags=["pipeline-v2"])
 
 db_client: Optional[MysqlClient] = None
+_state_store: Optional[PipelineStateStore] = None
 
 
 def init_router(db: MysqlClient):
-    global db_client
+    global db_client, _state_store
     db_client = db
+    _state_store = get_state_store()
+
+
+def state_store() -> PipelineStateStore:
+    global _state_store
+    if _state_store is None:
+        _state_store = get_state_store()
+    return _state_store
+
+
+def _make_thread_db() -> MysqlClient:
+    """Create a MysqlClient with an independent connection for thread pool use.
+    
+    Thread pool tasks MUST use a separate connection to avoid packet sequence conflicts
+    with the main event loop's shared connection.
+    """
+    new_client = MysqlClient()
+    new_client.connection = db_client.new_connection()
+    return new_client
 
 
 # ── Models ──
@@ -63,18 +89,26 @@ def _conn():
 async def _run_p1(book_id: int, task_id: str, **_):
     """Split chapters + chunking. Validates output."""
     from app.pipeline.book_processor import BookProcessor
+    state_store().update_stage(book_id, 1, 'RUNNING')
     task_manager.update_progress(task_id, 10, "正在拆分章节...")
-    # 直接同步运行（不用线程池），避免 MySQL 连接冲突
-    result = BookProcessor(db_client).process(book_id, 0)
-    chapters = result.get('chapters', 0)
-    chunks = result.get('chunks', 0)
-    if chapters == 0:
-        raise phase_failed_error("P1", book_id,
-                                 f"P1 产生 0 章节 — 请检查书籍 raw_text 是否存在",
-                                 {"raw_text": result.get('char_count', 0),
-                                  "book_result": result.get('status', 'unknown')})
-    task_manager.update_progress(task_id, 100, f"拆分完成: {chapters}章 {chunks}块")
-    return result
+    try:
+        result = BookProcessor(db_client).process(book_id, 0)
+        chapters = result.get('chapters', 0)
+        chunks = result.get('chunks', 0)
+        if chapters == 0:
+            state_store().update_stage(book_id, 1, 'FAILED')
+            raise phase_failed_error("P1", book_id,
+                                     f"P1 产生 0 章节 — 请检查书籍 raw_text 是否存在",
+                                     {"raw_text": result.get('char_count', 0),
+                                      "book_result": result.get('status', 'unknown')})
+        state_store().update_stage(book_id, 1, 'SUCCESS')
+        task_manager.update_progress(task_id, 100, f"拆分完成: {chapters}章 {chunks}块")
+        return result
+    except PipelineError:
+        raise  # re-raise structured errors (already handled)
+    except Exception as e:
+        state_store().update_stage(book_id, 1, 'FAILED')
+        raise
 
 
 async def _run_p2(book_id: int, task_id: str, **_):
@@ -82,6 +116,7 @@ async def _run_p2(book_id: int, task_id: str, **_):
     import os
     from app.clients.model_client import ModelClient
 
+    state_store().update_stage(book_id, 1, 'RUNNING')
     task_manager.update_progress(task_id, 10, "正在获取 DeepSeek 梗概...")
     conn = _conn()
     with conn.cursor() as c:
@@ -111,12 +146,13 @@ async def _run_p2(book_id: int, task_id: str, **_):
                   (json.dumps(prior_hint_dict, ensure_ascii=False), book_id))
     conn.commit()
 
+    state_store().update_stage(book_id, 1, 'SUCCESS')
     task_manager.update_progress(task_id, 100, "prior_hint 完成")
     return {"status": "success", "book_id": book_id, "prior_hint_keys": list(prior_hint_dict.keys())}
 
 
 async def _run_p3(book_id: int, task_id: str, use_model: bool = True, provider: str = "local"):
-    """Extract chapter facts.
+    """Extract chapter facts (checkpoint-aware, supports cancel).
 
     Supports provider="local" (llama-server 9B) or "deepseek" (DeepSeek API).
     When use_model=False, falls back to rule-based extraction.
@@ -138,7 +174,13 @@ async def _run_p3(book_id: int, task_id: str, use_model: bool = True, provider: 
     runner = FactPipelineRunner(db_client, use_model=use_model, provider=provider)
     task_manager.update_progress(task_id, 2, f"共 {total} 章，开始提取...")
 
-    result = await runner.process_book(book_id)
+    # Wire up cancel event
+    cancel_event = _get_cancel_event(book_id, "P3")
+    if cancel_event is None:
+        cancel_event = asyncio.Event()
+        _store_cancel_event(book_id, "P3", cancel_event)
+
+    result = await runner.process_book(book_id, cancel_event=cancel_event)
 
     # BUG FIX: DictCursor returns dict, not tuple. Use COUNT(*) key.
     with conn.cursor() as c:
@@ -146,39 +188,49 @@ async def _run_p3(book_id: int, task_id: str, use_model: bool = True, provider: 
         row = c.fetchone()
         done = row["cnt"] if row else 0
 
-    if done == 0:
-        raise phase_failed_error("P3", book_id,
-                                 f"P3 提取后产生 0 条 fact — 模型可能不可用或规则提取为空",
-                                 {"total_chapters": total, "provider": provider})
-
     pct = min(100, done * 100 / max(total, 1))
     task_manager.update_progress(task_id, pct, f"提取完成: {done}/{total} 章")
     return result
 
 
 async def _run_p4(book_id: int, task_id: str, **_):
-    """Entity governance."""
+    """Entity governance.
+    
+    NOTE: runs in thread pool with independent DB connection.
+    """
+    import asyncio
     from app.pipeline.entity_governance_runner import EntityGovernanceRunner
 
+    state_store().update_stage(book_id, 3, 'RUNNING')
     task_manager.update_progress(task_id, 10, "实体治理中...")
-    result = EntityGovernanceRunner(db_client).process_book(book_id)
+    thread_db = _make_thread_db()
+    try:
+        runner = EntityGovernanceRunner(thread_db)
+        result = await asyncio.to_thread(runner.process_book, book_id)
+    finally:
+        thread_db.close()
     profiles = result.get("profiles", 0)
     decisions = result.get("decisions", 0)
     task_manager.update_progress(task_id, 100, f"治理完成: {profiles} 画像, {decisions} 别名决策")
+    state_store().update_stage(book_id, 3, 'SUCCESS')
     return result
 
 
 async def _run_p5(book_id: int, task_id: str, **_):
-    """Narrative build.
-
-    BUG FIX: NarrativeBuilder.__init__ takes MysqlClient, not a raw connection.
-    """
+    """Narrative build."""
+    import asyncio
     from app.pipeline.narrative_builder import NarrativeBuilder
 
+    state_store().update_stage(book_id, 3, 'RUNNING')
     task_manager.update_progress(task_id, 10, "叙事构建中...")
-    # FIX: pass db_client (MysqlClient), not conn (Connection)
-    result = NarrativeBuilder(db_client).build_from_book(book_id)
+    thread_db = _make_thread_db()
+    try:
+        builder = NarrativeBuilder(thread_db)
+        result = await asyncio.to_thread(builder.build_from_book, book_id)
+    finally:
+        thread_db.close()
     task_manager.update_progress(task_id, 100, "叙事构建完成")
+    state_store().update_stage(book_id, 3, 'SUCCESS')
     return result
 
 
@@ -186,50 +238,78 @@ async def _run_p6(book_id: int, task_id: str, **_):
     """Index to Qdrant."""
     from app.pipeline.index_runner import IndexRunner
 
+    state_store().update_stage(book_id, 3, 'RUNNING')
     task_manager.update_progress(task_id, 10, "索引到 Qdrant...")
     result = await IndexRunner(db_client).index_book(book_id, reindex=True)
     chunks = result.get("chunks_indexed", 0)
     facts = result.get("facts_indexed", 0)
     task_manager.update_progress(task_id, 100, f"索引完成: {chunks} chunks, {facts} facts")
+    state_store().update_stage(book_id, 3, 'SUCCESS')
     return result
 
 
 async def _run_p7(book_id: int, task_id: str, **_):
     """Project to Neo4j."""
+    import asyncio
     from app.pipeline.graph_projector import GraphProjector
 
+    state_store().update_stage(book_id, 3, 'RUNNING')
     task_manager.update_progress(task_id, 10, "投影到 Neo4j...")
-    conn = _conn()
-    result = GraphProjector(conn).project_book(book_id, clear_first=True)
+    thread_db = _make_thread_db()
+    try:
+        conn = thread_db.new_connection()
+        projector = GraphProjector(conn)
+        result = await asyncio.to_thread(projector.project_book, book_id, True)
+        conn.close()
+    finally:
+        thread_db.close()
     task_manager.update_progress(task_id, 100, f"投影完成: {result.get('entities', 0)} 实体, {result.get('relations', 0)} 关系")
+    state_store().update_stage(book_id, 3, 'SUCCESS')
     return result
 
 
 async def _run_p8(book_id: int, task_id: str, **_):
     """Export training data."""
+    import asyncio
     from app.stores.chapter_fact_store import ChapterFactStore
     from datetime import datetime
 
+    state_store().update_stage(book_id, 3, 'RUNNING')
     task_manager.update_progress(task_id, 10, "导出训练数据...")
-    conn = _conn()
-    store = ChapterFactStore(conn)
-    facts = store.find_by_book(book_id)
+    thread_db = _make_thread_db()
+    conn = None
+    try:
+        conn = thread_db.new_connection()
+        store = ChapterFactStore(conn)
+        facts = store.find_by_book(book_id)
 
-    class DateTimeEncoder(json.JSONEncoder):
-        def default(self, o):
-            if isinstance(o, (datetime,)):
-                return o.isoformat()
-            return super().default(o)
+        class DateTimeEncoder(json.JSONEncoder):
+            def default(self, o):
+                if isinstance(o, (datetime,)):
+                    return o.isoformat()
+                return super().default(o)
 
-    task_manager.update_progress(task_id, 50, f"写入 {len(facts)} 条 facts...")
-    output_path = f"training/data/chapter_facts_book_{book_id}.jsonl"
-    import os
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        for fact in facts:
-            f.write(json.dumps(fact, ensure_ascii=False, cls=DateTimeEncoder) + "\n")
-    task_manager.update_progress(task_id, 100, f"导出完成: {len(facts)} 条 -> {output_path}")
-    return {"status": "success", "exported": len(facts), "path": output_path}
+        task_manager.update_progress(task_id, 50, f"写入 {len(facts)} 条 facts...")
+        output_path = f"training/data/chapter_facts_book_{book_id}.jsonl"
+        import os
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+        def _export():
+            with open(output_path, "w", encoding="utf-8") as f:
+                for fact in facts:
+                    f.write(json.dumps(fact, ensure_ascii=False, cls=DateTimeEncoder) + "\n")
+            return len(facts)
+
+        count = await asyncio.to_thread(_export)
+        task_manager.update_progress(task_id, 100, f"导出完成: {count} 条 -> {output_path}")
+        state_store().update_stage(book_id, 3, 'SUCCESS')
+        return {"status": "success", "exported": count, "path": output_path}
+    finally:
+        if conn:
+            try: conn.close()
+            except: pass
+        try: thread_db.close()
+        except: pass
 
 
 # ── Phase registry ──
@@ -265,6 +345,10 @@ async def trigger_phase(book_id: int, phase: str, req: PhaseTriggerRequest = Non
 
     task = task_manager.create(book_id, phase, label)
     logger.info(f"Triggering {label} use_model={use_model} provider={provider} (task={task.task_id})")
+
+    # Create cancel event for this phase
+    cancel_event = asyncio.Event()
+    _store_cancel_event(book_id, phase, cancel_event)
 
     coro = runner(book_id=book_id, task_id=task.task_id,
                   use_model=use_model, provider=provider)
@@ -354,6 +438,9 @@ async def get_pipeline_books():
                 phases[phase_name] = {"latest_status": "PENDING", "latest_progress": 0,
                                        "latest_task_id": "", "latest_error": ""}
 
+        # 添加 stage-level 状态（来自 pipeline_state）
+        stage_state = state_store().get_state(bid)
+        stage2_cp = state_store().get_checkpoint_summary(bid)
         result.append({
             "id": bid,
             "title": b["title"],
@@ -363,9 +450,301 @@ async def get_pipeline_books():
             "chunk_count": b["chunk_count"],
             "char_count": b["char_count"],
             "phases": phases,
+            "pipeline_state": {
+                "stage1": {"status": stage_state.stage1_status},
+                "stage2": {"status": stage_state.stage2_status,
+                           "detail": stage_state.stage2_detail,
+                           "checkpoint_summary": stage2_cp},
+                "stage3": {"status": stage_state.stage3_status,
+                           "force_override": stage_state.stage3_force_override},
+            },
         })
 
     return {"books": result}
+
+
+# ── Phase 1+2: Book Pipeline State + Stage 2 Checkpoint ──
+
+
+@router.get("/books/{book_id}/pipeline-state")
+async def get_book_pipeline_state(book_id: int):
+    """Get three-stage pipeline state for a book."""
+    st = state_store().get_state(book_id)
+    return st.to_dict()
+
+
+@router.post("/books/{book_id}/stage3/force")
+async def force_stage3(book_id: int, override: bool = True):
+    """Override Stage 3 gate: allow Stage 3 even if Stage 2 has errors."""
+    state_store().set_stage3_override(book_id, override)
+    # If override is false and status was FAILED, reset to PENDING
+    if not override:
+        st = state_store().get_state(book_id)
+        if st.stage3_status in ('FAILED', 'COMPLETED_WITH_ERRORS'):
+            state_store().update_stage(book_id, 3, 'PENDING')
+    return {"status": "ok", "book_id": book_id, "stage3_force_override": override}
+
+
+@router.post("/books/{book_id}/pipeline-state/reset")
+async def reset_pipeline_state(book_id: int, stage: int = 0):
+    """Reset pipeline state for a book. stage=0 resets all, 1/2/3 resets specific."""
+    store = state_store()
+    if stage == 0 or stage == 1:
+        store.update_stage(book_id, 1, 'PENDING')
+    if stage == 0 or stage == 2:
+        store.update_stage(book_id, 2, 'PENDING')
+        store.clear_checkpoints(book_id)
+    if stage == 0 or stage == 3:
+        store.update_stage(book_id, 3, 'PENDING')
+        store.set_stage3_override(book_id, False)
+    return {"status": "ok", "book_id": book_id, "stage": stage}
+
+
+# ── Stage 2 Checkpoint (P3 detail) ──
+
+
+@router.get("/books/{book_id}/stage2/checkpoint")
+async def get_stage2_checkpoint(book_id: int):
+    """Get per-chapter checkpoint status for Stage 2."""
+    store = state_store()
+    checkpoints = store.get_all_checkpoints(book_id)
+    summary = store.get_checkpoint_summary(book_id)
+    state = store.get_state(book_id)
+    return {
+        "book_id": book_id,
+        "stage2_status": state.stage2_status,
+        "stage2_detail": state.stage2_detail,
+        "summary": summary,
+        "chapters": [cp.to_dict() for cp in checkpoints],
+        "permanent_failed": [cp.to_dict() for cp in store.get_failed_chapters(book_id)],
+    }
+
+
+@router.post("/books/{book_id}/stage2/resume")
+async def resume_stage2(book_id: int):
+    """Resume Stage 2: only process PENDING + FAILED (retry<5) chapters."""
+    from app.pipeline.fact_pipeline_runner import FactPipelineRunner
+
+    label = f"提取续跑-B{book_id}"
+    task = task_manager.create(book_id, "P3", label)
+    cancel_event = asyncio.Event()
+
+    runner = FactPipelineRunner(db_client, use_model=True, provider="local")
+
+    async def _run():
+        try:
+            state_store().update_stage(book_id, 2, 'RUNNING')
+            result = await runner.resume_book(book_id, cancel_event=cancel_event)
+            task_manager.complete(task.task_id, result)
+        except Exception as e:
+            task_manager.fail(task.task_id, f"{type(e).__name__}: {e}")
+            logger.exception(f"Stage 2 resume failed for book {book_id}")
+
+    _store_cancel_event(book_id, "P3", cancel_event)
+    task_manager.launch(task, _run())
+    return PhaseTriggerResponse(status="started", task_id=task.task_id, message=f"{label} 已启动")
+
+
+@router.post("/books/{book_id}/stage2/retry-chapter/{chapter_number}")
+async def retry_stage2_chapter(book_id: int, chapter_number: int):
+    """Reset and retry a single failed chapter."""
+    from app.pipeline.fact_pipeline_runner import FactPipelineRunner
+
+    store = state_store()
+    store.reset_chapter_checkpoint(book_id, chapter_number)
+
+    label = f"重试第{chapter_number}章-B{book_id}"
+    task = task_manager.create(book_id, "P3", label)
+    cancel_event = asyncio.Event()
+
+    runner = FactPipelineRunner(db_client, use_model=True, provider="local")
+
+    async def _run():
+        try:
+            result = await runner.resume_book(book_id, cancel_event=cancel_event)
+            task_manager.complete(task.task_id, result)
+        except Exception as e:
+            task_manager.fail(task.task_id, f"{type(e).__name__}: {e}")
+
+    _store_cancel_event(book_id, "P3", cancel_event)
+    task_manager.launch(task, _run())
+    return PhaseTriggerResponse(status="started", task_id=task.task_id, message=f"{label} 已启动")
+
+
+@router.post("/books/{book_id}/stage2/rerun-all")
+async def rerun_stage2_all(book_id: int):
+    """Clear checkpoint and rerun ALL chapters."""
+    from app.pipeline.fact_pipeline_runner import FactPipelineRunner
+
+    store = state_store()
+    store.clear_checkpoints(book_id)
+    state_store().update_stage(book_id, 2, 'PENDING')
+
+    label = f"全量重跑提取-B{book_id}"
+    task = task_manager.create(book_id, "P3", label)
+    cancel_event = asyncio.Event()
+
+    runner = FactPipelineRunner(db_client, use_model=True, provider="local")
+
+    async def _run():
+        try:
+            result = await runner.process_book(book_id, cancel_event=cancel_event)
+            task_manager.complete(task.task_id, result)
+        except Exception as e:
+            task_manager.fail(task.task_id, f"{type(e).__name__}: {e}")
+
+    _store_cancel_event(book_id, "P3", cancel_event)
+    task_manager.launch(task, _run())
+    return PhaseTriggerResponse(status="started", task_id=task.task_id, message=f"{label} 已启动")
+
+
+# ── Stage-level cleanup ──
+
+
+@router.post("/books/{book_id}/cleanup/stage1", response_model=CleanupResponse)
+async def cleanup_stage1(book_id: int):
+    """Clean Stage 1 data (chapters + chunks) + reset state + clear tasks."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM novel_chunk WHERE book_id = %s", (book_id,))
+            cur.execute("DELETE FROM novel_chapter WHERE book_id = %s", (book_id,))
+            cur.execute("UPDATE novel_book SET status='IMPORTED', chapter_count=0, chunk_count=0 WHERE id = %s", (book_id,))
+            cur.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s AND phase IN ('P1','P2')", (book_id,))
+        conn.commit()
+        state_store().update_stage(book_id, 1, 'PENDING')
+        task_manager.clear_by_book(book_id)
+        return CleanupResponse(status="success", message="阶段一已清理（分章+分块）")
+    except Exception as e:
+        return CleanupResponse(status="error", message=str(e))
+
+
+@router.post("/books/{book_id}/cleanup/stage2", response_model=CleanupResponse)
+async def cleanup_stage2(book_id: int):
+    """Clean Stage 2 data (chapter facts + model calls + checkpoint)."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM novel_model_call WHERE book_id = %s", (book_id,))
+            cur.execute("DELETE FROM novel_chapter_fact WHERE book_id = %s", (book_id,))
+            cur.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s AND phase IN ('P3')", (book_id,))
+        conn.commit()
+        state_store().clear_checkpoints(book_id)
+        state_store().update_stage(book_id, 2, 'PENDING')
+        task_manager.clear_by_book(book_id)
+        return CleanupResponse(status="success", message="阶段二已清理（提取+模型调用）")
+    except Exception as e:
+        return CleanupResponse(status="error", message=str(e))
+
+
+@router.post("/books/{book_id}/cleanup/stage3", response_model=CleanupResponse)
+async def cleanup_stage3(book_id: int):
+    """Clean Stage 3 data (governance, narrative, qdrant, neo4j, export)."""
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            tables = [
+                "novel_plot_stage", "novel_event_fact", "novel_event_mention",
+                "novel_relation_fact", "novel_relation_mention", "novel_alias_decision",
+                "novel_entity_profile", "novel_entity_mention",
+            ]
+            for t in tables:
+                cur.execute(f"DELETE FROM {t} WHERE book_id = %s", (book_id,))
+            cur.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s AND phase IN ('P4','P5','P6','P7','P8')", (book_id,))
+        conn.commit()
+        # 清向量和图谱
+        try:
+            from app.stores.vector_index_store import VectorIndexStore
+            VectorIndexStore(conn).delete_book_vectors(book_id)
+        except Exception:
+            pass
+        neo4j_client.clear_book(book_id=book_id)
+        state_store().update_stage(book_id, 3, 'PENDING')
+        task_manager.clear_by_book(book_id)
+        return CleanupResponse(status="success", message="阶段三已清理（治理+叙事+索引+图谱+导出）")
+    except Exception as e:
+        return CleanupResponse(status="error", message=str(e))
+
+
+# ── Phase 3: Queue API ──
+
+_queue_started = False
+
+
+@router.post("/pipeline/enqueue")
+async def pipeline_enqueue(body: dict):
+    """Enqueue books for batch pipelined execution.
+    Body: {"book_ids": [6,7,9,10], "mode": "full"|"stage1"|"stage2"|"stage3"}
+    """
+    from app.pipeline.scheduler import get_scheduler
+    sched = get_scheduler()
+    book_ids = body.get("book_ids", [])
+    mode = body.get("mode", "full")
+    if not book_ids:
+        raise HTTPException(400, "book_ids required")
+    reqs = await sched.enqueue(book_ids, mode)
+    # Start scheduler if not running
+    global _queue_started
+    if not _queue_started:
+        sched.start()
+        _queue_started = True
+    return {"status": "ok", "enqueued": len(reqs), "book_ids": [r.book_id for r in reqs]}
+
+
+@router.post("/pipeline/cancel/{book_id}")
+async def pipeline_cancel_book(book_id: int):
+    from app.pipeline.scheduler import get_scheduler
+    ok = await get_scheduler().cancel_book(book_id)
+    return {"status": "ok" if ok else "not_found", "book_id": book_id}
+
+
+@router.get("/pipeline/queue")
+async def pipeline_queue_status():
+    from app.pipeline.scheduler import get_scheduler
+    try:
+        result = await get_scheduler().get_status()
+        return result
+    except Exception as e:
+        logger.error(f"Queue status error: {e}", exc_info=True)
+        raise HTTPException(500, detail=f"Queue error: {type(e).__name__}: {e}")
+
+
+@router.post("/pipeline/queue/clear")
+async def pipeline_queue_clear():
+    from app.pipeline.scheduler import get_scheduler
+    await get_scheduler().cancel_all()
+    return {"status": "ok", "message": "队列已清空"}
+
+
+# ── Cancel event tracking ──
+
+_cancel_events: dict[str, asyncio.Event] = {}  # key: "{book_id}_{phase}"
+
+
+def _store_cancel_event(book_id: int, phase: str, event: asyncio.Event):
+    key = f"{book_id}_{phase}"
+    _cancel_events[key] = event
+
+
+def _get_cancel_event(book_id: int, phase: str) -> Optional[asyncio.Event]:
+    return _cancel_events.get(f"{book_id}_{phase}")
+
+
+# ── Extended cancel: actually stops running coroutine ──
+
+@router.post("/tasks/{task_id}/cancel-hard")
+async def cancel_task_hard(task_id: str):
+    """Cancel a task and signal the running coroutine to stop."""
+    task = task_manager.get(task_id)
+    if not task:
+        raise HTTPException(404, f"Task {task_id} not found")
+    task_manager.cancel(task_id)
+    # Signal cancel event if any
+    ev = _get_cancel_event(task.book_id, task.phase)
+    if ev:
+        ev.set()
+        logger.info(f"Cancel event set for {task_id} (book={task.book_id} phase={task.phase})")
+    return {"status": "cancelled", "task_id": task_id}
 
 
 # ── Cleanup endpoints ──
@@ -387,9 +766,16 @@ async def cleanup_book(book_id: int):
                 cur.execute(f"DELETE FROM {t} WHERE book_id = %s", (book_id,))
                 total += cur.rowcount
             cur.execute("UPDATE novel_book SET status='IMPORTED', chapter_count=0, chunk_count=0 WHERE id = %s", (book_id,))
-        # 清理 pipeline task 记录
+        # 清理 pipeline task + state + checkpoint 记录
         task_manager.clear_by_book(book_id)
+        from app.stores.task_store import TaskStore
+        try:
+            TaskStore(conn).delete_by_book(book_id)
+        except Exception:
+            pass
         cur.execute("DELETE FROM novel_pipeline_task WHERE book_id = %s", (book_id,))
+        cur.execute("DELETE FROM novel_book_pipeline_state WHERE book_id = %s", (book_id,))
+        cur.execute("DELETE FROM novel_p3_checkpoint WHERE book_id = %s", (book_id,))
         conn.commit()
         logger.info(f"Cleaned book {book_id}: {total} rows")
         return CleanupResponse(status="success", message=f"已清理 {total} 条数据")

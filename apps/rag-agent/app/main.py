@@ -43,13 +43,49 @@ async def lifespan(app: FastAPI):
     reader_agent_api.init_router(db_client)
 
     # 初始化 Pipeline Task 持久化（MySQL 不可用时降级为纯内存模式）
+    # 注意：不再 restore 旧任务——旧 task 状态会污染前端进度显示。
+    # 前端现在使用 pipeline_state（novel_book_pipeline_state 表）作为权威状态源，
+    # task_manager 仅用于当前运行中的 tasks，重启后不恢复旧状态。
     from app.pipeline.task_manager import task_manager
     from app.stores.task_store import TaskStore
     try:
         task_manager.set_store(TaskStore(db_client.connect()))
-        task_manager.restore(limit=100)
+        # 不再调用 restore() — 避免旧任务污染前端
     except Exception as e:
         logger.warning("TaskStore init failed (MySQL not reachable?), running in memory-only mode: %s", e)
+
+    # 初始化 Pipeline State Store（建表）
+    from app.pipeline.pipeline_state import init_state_store
+    try:
+        ss = init_state_store(db_client.new_connection())
+        # 清理残留的 RUNNING 状态（进程重启前未正常结束的阶段）
+        for bid in range(1, 100):
+            try:
+                st = ss.get_state(bid)
+                changed = False
+                if st.stage1_status == 'RUNNING':
+                    ss.update_stage(bid, 1, 'FAILED')
+                    changed = True
+                if st.stage2_status == 'RUNNING':
+                    ss.update_stage(bid, 2, 'FAILED')
+                    changed = True
+                if st.stage3_status == 'RUNNING':
+                    ss.update_stage(bid, 3, 'FAILED')
+                    changed = True
+                if changed:
+                    logger.info(f"Reset stale RUNNING state for book {bid}")
+            except Exception:
+                break  # no more books
+        logger.info("PipelineStateStore initialized")
+    except Exception as e:
+        logger.warning("PipelineStateStore init failed: %s", e)
+
+    # 启动 Scheduler
+    from app.pipeline.scheduler import get_scheduler
+    try:
+        get_scheduler().start()
+    except Exception as e:
+        logger.warning("Pipeline scheduler init failed: %s", e)
 
     # 初始化 Neo4j 客户端（惰性连接，配置完在首次写操作时自动建立连接）
 

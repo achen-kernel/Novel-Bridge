@@ -17,7 +17,7 @@ from app.api.demo import demo_page
 router = APIRouter(tags=["frontend"])
 
 db_client = None
-API_BASE = "http://127.0.0.1:18081"
+API_BASE = "http://127.0.0.1:18079"
 
 
 def init_router(db):
