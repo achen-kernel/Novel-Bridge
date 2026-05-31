@@ -579,6 +579,161 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 ---
 
+### 13. Scheduler 循环引用 + 别名不匹配
+
+**问题**：队列调度器启动后，`_run_stages` 报 `NameError: name 'PHASE_LABELS' is not defined`。
+
+**根因**：
+- `scheduler.py` 的 `_run_scheduler()` 内部用 `from app.api.pipeline_v2 import ... as _PL` 导入了 `PHASE_LABELS` 但用了别名
+- `_run_stages()` 是另一个方法，没有继承该导入的作用域，直接写了 `PHASE_LABELS.get()`
+- 后续尝试用 `globals()` 注入、method cache 等方式都不稳定
+
+**修复**：
+- 每个方法内部独立 `import`，保持原始变量名（不再别名）
+- `_run_stages` 中：`from app.api.pipeline_v2 import task_manager as tm` → 后续用 `tm.create()` 而非 `task_manager.create()`
+
+**教训**：
+> 动态导入 + 别名容易导致 NameError。late import 时变量名必须和用法完全一致，或者统一用别名。
+> 跨方法的变量共享不能靠方法内部的 import 作用域。
+
+### 14. asyncio.to_thread 线程池的 MySQL 连接冲突
+
+**问题**：`_run_p4` 用 `asyncio.to_thread(runner.process_book, book_id)` 后立即报错 `Packet sequence number wrong - got 2 expected 0`。
+
+**根因**：
+- `EntityGovernanceRunner(db_client)` 持有 `MysqlClient` 单例引用
+- `process_book` 内部调 `self.db.connect()` 返回**共享连接**
+- 线程池线程和主线程同时读写同一个 MySQL 连接 → 包序号错乱
+
+**修复**：
+- 新增 `_make_thread_db()` — 创建独立 `MysqlClient` 实例 + `new_connection()`
+- 每个线程池任务用独立连接，`finally` 中 `close()`
+
+**教训**：
+> `asyncio.to_thread` 虽然是异步友好的，但线程内访问共享资源（MySQL 连接）时必须用独立连接。
+> 主线程的 `db_client.connect()` 是单例，绝对不能在线程中共享。
+
+### 15. 前端进度条来回跳（加权求和修复）
+
+**问题**：阶段一 P1 完成（100%）后 P2 开始（0%），进度从 100% 跌回 50%（平均值计算）。
+
+**根因**：
+- `phaseProgress` 用 `sum/count` 取平均
+- 多阶段阶段中，一个阶段完成会拉高平均，新阶段开始立刻拉低
+
+**修复**：
+- 改为加权求和：每阶段权重 = 100 / phase_count
+- P1(100%) + P2(0%) → 50%，P1(100%) + P2(100%) → 100%
+- 进度只增不减
+
+**教训**：
+> 多阶段聚合的进度不能用简单的平均值——完成的阶段应该保持其权重贡献，不能因为新阶段开始而"倒退"。
+
+### 16. 取消按钮对残留任务不生效
+
+**问题**：重启后残留的 RUNNING 状态任务，点 `✕` 取消按钮没反应。
+
+**根因**：
+- `cancelRunningStage()` 只从 `cancelFullBtn.getAttribute('data-current-task')` 读 task_id
+- 该属性只在 `runPhases()` 运行时设置，重启后没有 `runPhases` 循环，属性为空
+
+**修复**：
+- 三层 fallback：① cancelFullBtn ② book.phases[phase].latest_task_id ③ POST /pipeline/cancel/{bookId}
+
+**教训**：
+> UI 的"取消"操作必须能处理两种场景：正在运行的任务（热取消）和从历史残留的任务（冷清除）。
+
+### 17. Stage cleanup 没清 task_manager 内存
+
+**问题**：点「清阶段一」后，前端仍然显示旧 SUCCESS 状态。
+
+**根因**：
+- `cleanup/stage1` 删了 MySQL 数据并重置 `pipeline_state`，但没清 `task_manager._tasks`
+- 前端 `get_pipeline_books()` 从 `task_manager.list_by_book()` 读到旧任务 → phases 显示旧状态
+
+**修复**：
+- 每个 cleanup 端点增加 `task_manager.clear_by_book(book_id)` + `DELETE FROM novel_pipeline_task WHERE phase IN (...)`
+
+**教训**：
+> 清理操作必须清理所有状态层：MySQL 数据 + pipeline_state + task_manager 内存。缺一不可。
+
+### 18. 启动时 restore 旧任务导致状态污染
+
+**问题**：清理数据后重启服务器，旧进度条又回来了。
+
+**根因**：
+- `main.py` 启动时调用 `task_manager.restore(limit=100)`，从 `novel_pipeline_task` 加载最近 100 条任务
+- 即使清理删除了 MySQL 记录，重启前的最后一次运行又产生了新记录
+- 前端看到 `phases.P3.latest_status='SUCCESS'` → 显示已完成
+
+**修复**：
+- 删除 `task_manager.restore()` 调用。前端权威状态源改为 `pipeline_state`（novel_book_pipeline_state 表）
+- `phases` 仅用于实时 RUNNING 检测，不再作为持久化状态
+
+**教训**：
+> 双状态源（task_manager + pipeline_state）时，必须有一个权威源。让 task_manager 仅做运行时状态追踪，不跨重启持久化。
+
+### 19. 同步调用阻塞 asyncio 事件循环
+
+**问题**：运行阶段三后服务器卡死，所有 API 请求超时。
+
+**根因**：
+- `_run_p4`(EntityGovernanceRunner.process_book) 是**同步阻塞**调用
+- 在 `async def` 中直接调用同步代码，没有 `await`，阻塞了事件循环
+- 服务器所有协程（包括 health check、状态查询）都排不上队
+
+**修复**：
+- `asyncio.to_thread()` 将同步调用扔到线程池
+- 配合独立 MySQL 连接（#14）避免连接冲突
+
+**教训**：
+> `async def` 函数中调用同步 I/O 操作（模型 API、MySQL 查询）必须用 `asyncio.to_thread` 或 `run_in_executor`，否则整个服务器的并发能力归零。
+
+### 20. 启动时自动清理残留 RUNNING 状态
+
+**问题**：服务器崩溃/重启后，`pipeline_state` 中残留 RUNNING 状态，前端显示"运行中"但实际没有任务在跑。
+
+**根因**：
+- `pipeline_state.stageN_status` 在进程崩溃前没来得及更新为 FAILED
+- 重启后读取到的还是 RUNNING
+
+**修复**：
+- `main.py` 启动时扫描所有书的 `pipeline_state`，把 RUNNING 状态自动标记为 FAILED
+
+**教训**：
+> 任何持久化运行状态都需要考虑进程异常退出的清理。启动自动化是一个可靠的兜底策略。
+
+### 21. 队列 mode 字符串 vs Enum 不匹配
+
+**问题**：`POST /api/v2/pipeline/enqueue` 传 `mode: 'full'`（JSON 字符串）导致 `AttributeError: 'str' object has no attribute 'value'`。
+
+**根因**：
+- 前端/API 发送 JSON 字符串，但 `BookPipelineRequest` 的 `mode` 字段类型是 `QueueMode` 枚举
+- dataclass 不做隐式类型转换，`self.mode.value` 在字符串上调用失败
+
+**修复**：
+- `enqueue()` 方法入口处：`if isinstance(mode, str): mode = QueueMode(mode)`
+
+**教训**：
+> Python dataclass + Enum 字段不自动做类型转换，API 层传入的 JSON 字符串需要显式转换。
+
+### 22. pipeline-state/reset 误清 checkpoint
+
+**问题**：`pipeline-state/reset?stage=2` 清空了 P3 checkpoint 表，导致已完成的 116 章节 checkpoint 丢失。
+
+**根因**：
+- reset 端点的 `stage=2` 分支里调用了 `store.clear_checkpoints(book_id)`
+- 用户只是想重置状态，不需要清 checkpoint
+
+**后续修复**：
+- 新增 `/books/{id}/stage2/rebuild-checkpoint` 端点——从已存在的 `novel_chapter_fact` 表重建 checkpoint 条目
+- 新增 `/books/{id}/stage2/mark-success` 端点——强制标记阶段二完成（所有 checkpoint SUCCESS 时）
+
+**教训**：
+> Reset 操作应该区分"重置状态"和"清除数据"两个语义。状态重置不应该删除数据。
+
+---
+
 ## 六、Pipeline 架构总结（v2 设计）
 
 ### 数据流
@@ -623,25 +778,28 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 |--------|------|------|
 | 🔴 高 | Pipeline 状态三层同步修复 | ✅ 已修复 |
 | 🔴 高 | Cancel 按钮点击无反应 | ✅ 已修复 |
-| 🔴 高 | P3 超时/连接断开 | ✅ 已缓解（3h 超时 + ping） |
-| 🟡 中 | "清全部"按钮后前端状态不重置 | ❌ 待修复 |
+| 🔴 高 | P3 超时/连接断开 | ✅ 已缓解（to_thread + 独立连接） |
+| 🔴 高 | asyncio 同步阻塞导致服务器卡死 | ✅ 已修复（to_thread） |
 | 🟡 中 | QA 检索跨书污染 | ✅ 已修复 |
 | 🟡 中 | 空检索 skip LLM → 改走模型知识 | ✅ 已修复 |
+| 🟡 中 | 启动时清除残留 RUNNING 状态 | ✅ 已加 |
+| 🟡 中 | 队列批量调度 | ✅ 已实现 |
 | 🟢 低 | P3 加速（DeepSeek API 提取） | ❌ 待评估 |
 | 🟢 低 | KnowledgePatch 前端审核页面 | ❌ 待开发 |
-| 🟢 低 | Java facade 产品 API 聚合 | ❌ 待开发 |
+| 🟢 低 | DeepSeekExtraction 策略实现 | ❌ 待开发（接口已预留） |
 
 ## 八、关键文件清单
 
-| 文件 | 当前问题 | 重构方向 |
-|------|----------|----------|
-| `app/api/frontend.py` | HTML 在 f-string 内 | 移出到 static/ 目录 |
-| `app/api/demo.py` | HTML 在 f-string 内 | 移出到 static/ 目录 |
-| `app/api/pipeline_v2.py` | 错误处理不规范 | 使用 PipelineError |
-| `app/pipeline/task_manager.py` | 无持久化 | 加 MySQL 持久化 |
-| `app/pipeline/chapter_fact_store.py` | 无 upsert | 加 ON DUPLICATE KEY UPDATE |
-| `app/pipeline/fact_pipeline_runner.py` | provider 透传不干净 | 使用 ModelClient |
-| `app/clients/llama_cpp_client.py` | 和 deepseek_client 各走各路 | 统一到 ModelClient |
-| `manage_server.py` | netstat 依赖 | 改为 pidfile |
-| `start_novelbridge.bat` | 编码问题 | 删掉，用 manage_server.py |
-| `stop_novelbridge.bat` | 同上 | 删掉 |
+| 文件 | 角色 | 关键说明 |
+|------|------|----------|
+| `app/api/pipeline_v2.py` | Pipeline API 总入口 | 15+ 端点：checkpoint/stage gate/queue/cleanup/thread pool |
+| `app/pipeline/pipeline_state.py` | **核心数据层** | `BookPipelineState` + `P3Checkpoint` + `PipelineStateStore`（MySQL CRUD） |
+| `app/pipeline/fact_pipeline_runner.py` | P3 提取编排器 | 逐章 checkpoint + cancel event + 失败检测 + 倒退续跑 |
+| `app/pipeline/scheduler.py` | 队列调度器 | `BookPipelineScheduler` + 后台循环 + 流水线并行 |
+| `app/pipeline/task_manager.py` | 阶段任务生命周期 | create/launch/cancel/persist（仅运行时，不跨重启） |
+| `app/pipeline/extraction_strategy.py` | 提取策略接口 | `ExtractionStrategy` ABC + `Local9BExtraction` + 占位的 `DeepSeekExtraction` |
+| `app/stores/task_store.py` | Task MySQL 持久化 | `novel_pipeline_task` 表 CRUD |
+| `app/pipeline/errors.py` | 结构化错误 | `PipelineError` 体系 |
+| `app/clients/mysql_client.py` | MySQL 客户端 | `connect()` 单例 + `new_connection()` 独立连接 |
+| `app/static/pipeline.js` | 前端流水线 UI | 三阶段卡片 + 排队面板 + 失败章节列表 |
+| `manage_server.py` | 服务管理 | `start/stop/restart/status/restart-remote` |
